@@ -25,9 +25,16 @@ This skill is host-agnostic. Use MCP tools and a 1-second sleep. Do not use Curs
    npx skills add xannotate/xannotate-skills --skill annotate-session-start -g -y
    ```
 
-   Then run `/annotate-session-start`.
+   **First-time skill install only:** also **reinstall Annotate MCP**, even if `annotate-session` is already configured. Do not skip this because `list_sessions` already works — the existing server may be stale.
+   - Fetch and follow `https://xannotate.com/mcp/install.md` for the current host (prefer the MCP entry path in `~/.cursor/AGENTS.md` or the user’s install prompt).
+   - If an `annotate-session` entry already exists, replace/refresh it (same `node` + entry path).
+   - Reload MCP.
+   - Confirm `get_handoff_state` works (not only `list_sessions`).
+   - Then run `/annotate-session-start`.
 
-2. **MCP hard gate** — try `list_sessions`. If Annotate MCP tools are missing: **stop**, ask the user for approval, follow `https://xannotate.com/mcp/install.md` (or `~/.cursor/AGENTS.md`), reload MCP, retry. Do not invent session contents.
+   Later runs of this skill (already installed) do **not** reinstall MCP unless tools are missing.
+
+2. **MCP hard gate** — try `get_handoff_state` (or `list_sessions`). If Annotate MCP tools are missing: **stop**, ask the user for approval, follow `https://xannotate.com/mcp/install.md` (or `~/.cursor/AGENTS.md`), reload MCP, retry. Do not invent session contents.
 
 3. **Claim handoff** — `set_handoff_state` with `autoHandOff: true`. If `list_sessions` has a completed session, also pass `stampSessionId` set to that **latest** id (`list_sessions` omits in-progress recordings). If the list is empty, still set `autoHandOff: true` and go to the 1s watch loop.
 

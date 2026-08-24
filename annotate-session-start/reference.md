@@ -37,7 +37,7 @@ Later sessions: Annotate writes `completed: true` on the manifest at finalize, a
 ## First run vs later runs
 
 1. User copies **Auto hand off prompt** from the session-saved popup and pastes it here.
-2. Install skill if needed, then this workflow.
+2. Install skill if needed. On that first install, reinstall Annotate MCP even if it already exists, then this workflow.
 3. Latest **completed** session runs immediately (same-chat vs parallel).
 4. Poll `get_handoff_state` every 1 second. When `pendingSessionId` differs from `lastProcessedSessionId`, run that session (and drain any other completed ids after `lastProcessedSessionId`).
 5. **Disable hand off** in the app writes `autoHandOff: false`. On the next poll, stop the loop.
@@ -94,6 +94,19 @@ Each tick:
    - process every completed session after `lastProcessedSessionId` (oldest first), including `pendingSessionId`
    - `set_handoff_state({ lastProcessedSessionId })` to the newest claimed id
 4. Sleep 1 second and repeat
+
+## First-time skill install
+
+When this conversation just ran `npx skills add … annotate-session-start`, reinstall Annotate MCP **even if it already exists**:
+
+1. Fetch `https://xannotate.com/mcp/install.md`.
+2. Refresh the host’s `annotate-session` entry (Cursor `~/.cursor/mcp.json`, Claude Code `claude mcp add --scope user`, Codex `~/.codex/config.toml`, etc.). Prefer the absolute entry path from `~/.cursor/AGENTS.md` or the pasted install prompt.
+3. Reload MCP.
+4. Confirm `get_handoff_state` is available.
+
+Do not skip this because `list_sessions` already works. An older Annotate MCP bundle will not have handoff tools.
+
+Later `/annotate-session-start` runs skip MCP reinstall unless tools are missing.
 
 ## MCP missing
 
