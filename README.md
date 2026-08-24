@@ -4,7 +4,7 @@ Public [skills.sh](https://skills.sh) package for Annotate recording handoff.
 
 ## Skill
 
-- `annotate-session-start` — `/annotate-session-start` runs the latest completed session immediately, then polls handoff state every 1 second.
+- `annotate-session-start` — `/annotate-session-start` runs the latest completed session immediately, then keeps polling via `wait_for_handoff` (1-second MCP poll) and does not end the turn while auto hand off is on.
 
 ## Install
 

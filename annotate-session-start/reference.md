@@ -24,7 +24,8 @@ Tools:
 
 | Tool | Use |
 | --- | --- |
-| `get_handoff_state` | Read the shared flag and `pendingSessionId` |
+| `wait_for_handoff` | **Watch loop.** Blocks up to `timeoutMs` (default 20000), polling every 1s. Returns `ready` + `sessionIds`, `disabled`, or `timeout`. |
+| `get_handoff_state` | Snapshot: flag, `pendingSessionId`, `lastProcessedSessionId`, `unprocessedSessionIds` |
 | `set_handoff_state` | `{ autoHandOff?, lastProcessedSessionId?, workspaceHint?, stampSessionId? }` |
 | `get_timeline` | First read of a completed session |
 | `get_manifest_summary` | Includes `completed` and `autoHandOff` when stamped |
@@ -34,13 +35,15 @@ Tools:
 
 Later sessions: Annotate writes `completed: true` on the manifest at finalize, and if `autoHandOff` is already true it also writes `pendingSessionId` on `handoff.json` and stamps `autoHandOff` on the manifest.
 
+`wait_for_handoff` / `get_handoff_state.unprocessedSessionIds` drain **completed** ids after `lastProcessedSessionId`, not only a `pendingSessionId` change. Two finishes in one second are not dropped.
+
 ## First run vs later runs
 
 1. User copies **Auto hand off prompt** from the session-saved popup and pastes it here.
 2. Install skill if needed. On that first install, reinstall Annotate MCP even if it already exists, then this workflow.
 3. Latest **completed** session runs immediately (same-chat vs parallel).
-4. Poll `get_handoff_state` every 1 second. When `pendingSessionId` differs from `lastProcessedSessionId`, run that session (and drain any other completed ids after `lastProcessedSessionId`).
-5. **Disable hand off** in the app writes `autoHandOff: false`. On the next poll, stop the loop.
+4. Mark `lastProcessedSessionId`, then call `wait_for_handoff` and **do not end the turn**.
+5. **Disable hand off** in the app writes `autoHandOff: false`. The next `wait_for_handoff` returns `disabled` and the loop stops.
 
 ## Same chat vs parallel
 
@@ -76,24 +79,24 @@ Do not start a second watch loop in the forked chat.
 
 ## Watch loop
 
-Host-agnostic. After the first session (or when idle):
+Host-agnostic. The 1-second poll lives in MCP:
 
 ```
-sleep 1
-get_handoff_state
+wait_for_handoff
+→ disabled: stop
+→ ready: process sessionIds (oldest first), set lastProcessed, wait_for_handoff
+→ timeout: wait_for_handoff
 ```
 
-Use whatever 1-second sleep the host has (`sleep 1`, a 1s timer). Do not use Cursor `/loop`, file-change hooks, or deeplinks for this watch. Do not open `handoff.json` on disk.
+Do not read `handoff.json` on disk. Do not treat a user-facing “watching for the next recording” sentence as the end of work — call `wait_for_handoff` after it.
 
-Each tick:
+Fallback if `wait_for_handoff` is missing:
 
-1. `get_handoff_state`
-2. If `autoHandOff` is false → stop listening
-3. If `pendingSessionId` is set and ≠ `lastProcessedSessionId`:
-   - `list_sessions`
-   - process every completed session after `lastProcessedSessionId` (oldest first), including `pendingSessionId`
-   - `set_handoff_state({ lastProcessedSessionId })` to the newest claimed id
-4. Sleep 1 second and repeat
+1. `get_handoff_state` and `list_sessions` every 1 second
+2. If `autoHandOff` is false → stop
+3. Process every completed session after `lastProcessedSessionId` (oldest first), including `pendingSessionId` and `unprocessedSessionIds` when present
+4. `set_handoff_state({ lastProcessedSessionId })` to the newest claimed id
+5. Poll again immediately
 
 ## First-time skill install
 
@@ -102,7 +105,7 @@ When this conversation just ran `npx skills add … annotate-session-start`, rei
 1. Fetch `https://xannotate.com/mcp/install.md`.
 2. Refresh the host’s `annotate-session` entry (Cursor `~/.cursor/mcp.json`, Claude Code `claude mcp add --scope user`, Codex `~/.codex/config.toml`, etc.). Prefer the absolute entry path from `~/.cursor/AGENTS.md` or the pasted install prompt.
 3. Reload MCP.
-4. Confirm `get_handoff_state` is available.
+4. Confirm `get_handoff_state` and `wait_for_handoff` are available.
 
 Do not skip this because `list_sessions` already works. An older Annotate MCP bundle will not have handoff tools.
 
