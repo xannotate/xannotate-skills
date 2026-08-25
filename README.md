@@ -4,7 +4,7 @@ Public [skills.sh](https://skills.sh) package for Annotate recording handoff.
 
 ## Skill
 
-- `annotate-session-start` — `/annotate-session-start` runs the latest completed session immediately, then keeps polling via `wait_for_handoff` (1-second MCP poll) and does not end the turn while auto hand off is on.
+- `annotate-session-start` — `/annotate-session-start` registers this chat as a live listener, runs any included recording id, then polls every 2 seconds via `poll_agent_session` for recordings the user hands off from Annotate. Install **globally**. Do not end the turn while registered.
 
 ## Install
 
@@ -20,14 +20,14 @@ Non-interactive:
 npx skills add xannotate/xannotate-skills --skill annotate-session-start -g -y
 ```
 
-Then run `/annotate-session-start` (or paste the Auto hand off prompt from the Annotate session-saved popup).
+Then run `/annotate-session-start` (or paste the Session hand off prompt from the Annotate session-saved popup).
 
 ## What it includes
 
 - [`annotate-session-start/SKILL.md`](annotate-session-start/SKILL.md)
 - [`annotate-session-start/reference.md`](annotate-session-start/reference.md)
 
-Requires [Annotate MCP](https://xannotate.com/mcp/install.md) (`annotate-session`).
+Requires [Annotate MCP](https://xannotate.com/mcp/install.md) (`annotate-session`) and the Annotate desktop app for live handoff.
 
 ## Publish
 

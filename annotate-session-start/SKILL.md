@@ -1,24 +1,24 @@
 ---
 name: annotate-session-start
 description: >-
-  Starts Annotate recording auto handoff for coding agents. Installs this skill
-  globally from skills.sh if missing, writes autoHandOff true, immediately runs
-  the latest completed Annotate recording session, then keeps polling for later
-  sessions via wait_for_handoff (1-second MCP poll). Never ends the turn while
-  autoHandOff is true.
-  Use when the user runs /annotate-session-start, pastes an Auto hand off
-  prompt, or mentions Annotate recording auto hand off.
+  Starts Annotate recording session handoff for coding agents. Installs this
+  skill globally from skills.sh if missing, registers this chat as a live
+  listener (sessionId + sessionTitle via MCP), runs any annotate-… id in the
+  prompt, then polls every 2 seconds for recordings the user hands off from the
+  session-saved popup. Never ends the turn while registered.
+  Use when the user runs /annotate-session-start, pastes a Session hand off
+  prompt, or mentions Annotate recording session handoff.
 ---
 
 # Annotate session start
 
-Rapid handoff for Annotate recordings. After the user pastes the Auto hand off prompt (or types `/annotate-session-start`), claim handoff, **run the latest completed recording immediately**, then **keep watching**.
+Rapid handoff for Annotate recordings. Register this chat as a live listener, **run any recording id in the prompt immediately**, then **keep polling**. The user can later click this chat’s title in Annotate to queue another recording — no paste.
 
 Always recommend **global** install (`-g`). Never install this skill project-local.
 
-The later-session signal is Annotate MCP (`wait_for_handoff`, or `get_handoff_state` + `list_sessions`). Do not read `handoff.json` from disk. Do not use Claude `FileChanged` or deeplinks as the session signal.
+The later-session signal is Annotate MCP (`poll_agent_session`). Do not read files from the Annotate library. Do not use Claude `FileChanged` or deeplinks as the session signal.
 
-**Ending the turn while `autoHandOff` is true is a bug.** Later recordings will sit in `pendingSessionId` and never run. After the first session, your last action must be another wait/poll — not a closing “I’m watching” message.
+**Ending the turn while this listener is registered is a bug.** Later handoffs will sit in the queue and never run. After the first session, your last action must be another `poll_agent_session` — not a closing “I’m watching” message.
 
 ## Workflow
 
@@ -32,16 +32,18 @@ The later-session signal is Annotate MCP (`wait_for_handoff`, or `get_handoff_st
    - Fetch and follow `https://xannotate.com/mcp/install.md` for the current host (prefer the MCP entry path in `~/.cursor/AGENTS.md` or the user’s install prompt).
    - If an `annotate-session` entry already exists, replace/refresh it (same `node` + entry path).
    - Reload MCP.
-   - Confirm `get_handoff_state` and `wait_for_handoff` work (not only `list_sessions`).
+   - Confirm `register_agent_session` and `poll_agent_session` work (not only `list_sessions`).
    - Then run `/annotate-session-start`.
 
    Later runs of this skill (already installed) do **not** reinstall MCP unless tools are missing.
 
-2. **MCP hard gate** — try `get_handoff_state` (or `list_sessions`). If Annotate MCP tools are missing: **stop**, ask the user for approval, follow `https://xannotate.com/mcp/install.md` (or `~/.cursor/AGENTS.md`), reload MCP, retry. Do not invent session contents.
+2. **MCP hard gate** — try `list_sessions`. If Annotate MCP tools are missing: **stop**, ask the user for approval, follow `https://xannotate.com/mcp/install.md` (or `~/.cursor/AGENTS.md`), reload MCP, retry. Do not invent session contents.
 
-3. **Claim handoff** — `set_handoff_state` with `autoHandOff: true`. If `list_sessions` has a completed session, also pass `stampSessionId` set to that **latest** id (`list_sessions` omits in-progress recordings). If the list is empty, still set `autoHandOff: true` and go to the watch loop.
+   `register_agent_session` / `poll_agent_session` require the **Annotate app to be running**. If they return “Start Annotate to use session handoff.”, ask the user to open Annotate, then retry. Recording-read tools (`get_timeline`, etc.) still work with the app closed.
 
-4. **Run the latest completed recording now** — that session is the first auto-handoff. Do not wait for the next stop. Do not read a session that is not completed. If none is completed yet, skip this step.
+3. **Register this chat** — `register_agent_session`. Then `set_agent_session_title` with a short title from this conversation or the first recording (for example `Login fix`, not the `annotate-…` id). That title is the button the user clicks in Annotate.
+
+4. **Run the included recording now** — if the prompt has `Session id: annotate-…`, that recording is the first handoff. Do not wait for the next stop. Do not read a session that is not completed. If there is no recording id, skip this step.
 
 5. **Read the session (MCP-first)**
    - `get_timeline` first
@@ -55,22 +57,22 @@ The later-session signal is Annotate MCP (`wait_for_handoff`, or `get_handoff_st
    - Fork if it is a different repo, a different feature/bug, or the user asked for parallel/multitask work.
    - Cursor: `Task` with `run_in_background: true` (or a prompt deeplink if Task is unavailable).
    - Claude / Codex: host spawn if available; otherwise tell the user to open a new chat and paste the session id + `/annotate-session-start`.
+   - **This chat stays the watcher.** Do not start a second `poll_agent_session` loop in the fork.
 
-8. **Mark processed** — `set_handoff_state({ lastProcessedSessionId })` after claiming, before long work.
+8. **Watch later recordings** — immediately call `poll_agent_session` with this listener `sessionId` (it heartbeats and waits up to 20s, checking every **2 seconds** inside Annotate). Do not sleep-and-stop.
+   - `status: "ready"`: process `recordingSessionIds` oldest first (same steps 5–7). Then **immediately** call `poll_agent_session` again.
+   - `status: "timeout"`: **immediately** call `poll_agent_session` again. Do not write a final message.
+   - `status: "gone"` or “Start Annotate…”: the listener died or the app quit. Tell the user. They can run `/annotate-session-start` again after opening Annotate.
 
-9. **Watch later recordings** — immediately call `wait_for_handoff` (it polls every **1 second** inside MCP). Do not sleep-and-stop. Do not wait only for `pendingSessionId` to change — the tool also returns every completed id after `lastProcessedSessionId`.
-   - `status: "disabled"` (`autoHandOff` false): **stop listening** and say handoff is disabled.
-   - `status: "ready"`: process `sessionIds` oldest first (same steps 5–8). Then `set_handoff_state({ lastProcessedSessionId })` to the newest claimed id. Then **immediately** call `wait_for_handoff` again.
-   - `status: "timeout"`: **immediately** call `wait_for_handoff` again. Do not write a final message.
-
-   **Fallback** if `wait_for_handoff` is missing: every 1 second call `get_handoff_state` **and** `list_sessions`. Process every completed id after `lastProcessedSessionId` (oldest first), including when `pendingSessionId` equals an id already in that drain list. Then poll again. Your last tool call must be the next poll.
+   **Fallback** if `poll_agent_session` is missing: every 2 seconds call `list_agent_sessions`. If this listener disappeared, stop. You cannot receive queued handoffs without `poll_agent_session` — ask the user to refresh Annotate MCP.
 
 ## Do not
 
-- Browse private Annotate library paths. Use MCP tools only (`wait_for_handoff` / `get_handoff_state` / `set_handoff_state` / `list_sessions`).
-- End the turn while `autoHandOff` is true.
+- Browse private Annotate library paths. Use MCP tools only.
+- End the turn while this listener is registered.
 - Read or stamp a recording that is not completed.
 - Invent frames, speech, or marks.
 - Install this skill without `-g`.
+- Start a second watch loop in a forked chat.
 
 See [reference.md](reference.md) for MCP fields, host spawn notes, and poll details.

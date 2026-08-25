@@ -10,40 +10,44 @@ npx skills add xannotate/xannotate-skills --skill annotate-session-start -g -y
 
 Project-local install is wrong for this skill — recordings are not tied to one repo.
 
+## Two ids
+
+| Id | Format | Meaning |
+| --- | --- | --- |
+| Agent listener `sessionId` | `agent-…` | This chat. Returned by `register_agent_session`. Shown in Annotate as `sessionTitle`. |
+| Recording `sessionId` | `annotate-…` | A finished screen recording. In the Session hand off prompt and in `poll_agent_session.recordingSessionIds`. |
+
 ## MCP contract
 
-`list_sessions` returns only **completed** sessions:
+Recording-read tools are unchanged and work with Annotate quit:
 
-- `dataDir`, `sessionsRoot`, `framesRoot`, `filesRoot`
-- `handoff`: `{ version, autoHandOff, updatedAt, lastProcessedSessionId?, pendingSessionId?, workspaceHint? }`
-- `sessions[]` newest first; each includes `completed: true` and may include `autoHandOff`
+- `list_sessions` — completed recordings only; also `dataDir`, `sessionsRoot`, `framesRoot`, `filesRoot`
+- `get_timeline` — first read
+- `get_session_guide` / `search_session` / `get_frames_near` / `get_transcript_range` / `get_manifest_summary` / `list_context`
 
-In-progress recordings are omitted. Session read tools (`get_timeline`, `get_session_guide`, `search_session`, `get_frames_near`, `get_transcript_range`, `get_manifest_summary`, `list_context`) refuse an incomplete session id.
-
-Tools:
+Listener tools require the Annotate app (localhost API):
 
 | Tool | Use |
 | --- | --- |
-| `wait_for_handoff` | **Watch loop.** Blocks up to `timeoutMs` (default 20000), polling every 1s. Returns `ready` + `sessionIds`, `disabled`, or `timeout`. |
-| `get_handoff_state` | Snapshot: flag, `pendingSessionId`, `lastProcessedSessionId`, `unprocessedSessionIds` |
-| `set_handoff_state` | `{ autoHandOff?, lastProcessedSessionId?, workspaceHint?, stampSessionId? }` |
-| `get_timeline` | First read of a completed session |
-| `get_manifest_summary` | Includes `completed` and `autoHandOff` when stamped |
-| `search_session` / `get_frames_near` / `get_transcript_range` / `list_context` | Evidence |
+| `register_agent_session` | Create this chat’s listener. Optional `sessionTitle`. Returns `{ sessionId, sessionTitle }`. |
+| `set_agent_session_title` | `{ sessionId, sessionTitle }` — button label in the session-saved popup |
+| `poll_agent_session` | **Watch loop.** Heartbeat + block up to `timeoutMs` (default 20000), checking every 2s. Returns `ready` + `recordingSessionIds`, `timeout`, or `gone`. |
+| `list_agent_sessions` | Live `{ sessionId, sessionTitle }[]` |
+| `unregister_agent_session` | Stop appearing in Annotate |
 
-`stampSessionId` writes that session’s `.manifest.json` `autoHandOff: true`. Use it on skill start for the latest completed session (it was saved while the global flag was still false).
+If Annotate is quit, listener tools return `Start Annotate to use session handoff.`
 
-Later sessions: Annotate writes `completed: true` on the manifest at finalize, and if `autoHandOff` is already true it also writes `pendingSessionId` on `handoff.json` and stamps `autoHandOff` on the manifest.
-
-`wait_for_handoff` / `get_handoff_state.unprocessedSessionIds` drain **completed** ids after `lastProcessedSessionId`, not only a `pendingSessionId` change. Two finishes in one second are not dropped.
+Missed heartbeats for 8 seconds remove the listener from Annotate.
 
 ## First run vs later runs
 
-1. User copies **Auto hand off prompt** from the session-saved popup and pastes it here.
+1. User copies **Session hand off** from the session-saved popup and pastes it here (includes `Session id: annotate-…`).
 2. Install skill if needed. On that first install, reinstall Annotate MCP even if it already exists, then this workflow.
-3. Latest **completed** session runs immediately (same-chat vs parallel).
-4. Mark `lastProcessedSessionId`, then call `wait_for_handoff` and **do not end the turn**.
-5. **Disable hand off** in the app writes `autoHandOff: false`. The next `wait_for_handoff` returns `disabled` and the loop stops.
+3. Register, set a title, run the included recording (same-chat vs parallel).
+4. Call `poll_agent_session` and **do not end the turn**.
+5. The user can click this title after the next save to queue another recording.
+
+`/annotate-session-start` with no recording id: register, title, poll. Do not steal another chat’s recordings.
 
 ## Same chat vs parallel
 
@@ -60,7 +64,7 @@ Fork when:
 
 ### Cursor
 
-Prefer `Task` (`run_in_background: true`) with the session id and “run `/annotate-session-start` for this session only (do not start a second watcher).”
+Prefer `Task` (`run_in_background: true`) with the recording session id and “do not start a second watcher.”
 
 If Task is unavailable, open a Cursor prompt deeplink with the session-id prompt plus `/annotate-session-start`.
 
@@ -79,24 +83,16 @@ Do not start a second watch loop in the forked chat.
 
 ## Watch loop
 
-Host-agnostic. The 1-second poll lives in MCP:
+Host-agnostic. The 2-second poll lives in Annotate:
 
 ```
-wait_for_handoff
-→ disabled: stop
-→ ready: process sessionIds (oldest first), set lastProcessed, wait_for_handoff
-→ timeout: wait_for_handoff
+poll_agent_session
+→ gone / app quit: stop
+→ ready: process recordingSessionIds (oldest first), poll_agent_session
+→ timeout: poll_agent_session
 ```
 
-Do not read `handoff.json` on disk. Do not treat a user-facing “watching for the next recording” sentence as the end of work — call `wait_for_handoff` after it.
-
-Fallback if `wait_for_handoff` is missing:
-
-1. `get_handoff_state` and `list_sessions` every 1 second
-2. If `autoHandOff` is false → stop
-3. Process every completed session after `lastProcessedSessionId` (oldest first), including `pendingSessionId` and `unprocessedSessionIds` when present
-4. `set_handoff_state({ lastProcessedSessionId })` to the newest claimed id
-5. Poll again immediately
+Do not treat a user-facing “watching for the next recording” sentence as the end of work — call `poll_agent_session` after it.
 
 ## First-time skill install
 
@@ -105,9 +101,9 @@ When this conversation just ran `npx skills add … annotate-session-start`, rei
 1. Fetch `https://xannotate.com/mcp/install.md`.
 2. Refresh the host’s `annotate-session` entry (Cursor `~/.cursor/mcp.json`, Claude Code `claude mcp add --scope user`, Codex `~/.codex/config.toml`, etc.). Prefer the absolute entry path from `~/.cursor/AGENTS.md` or the pasted install prompt.
 3. Reload MCP.
-4. Confirm `get_handoff_state` and `wait_for_handoff` are available.
+4. Confirm `register_agent_session` and `poll_agent_session` are available.
 
-Do not skip this because `list_sessions` already works. An older Annotate MCP bundle will not have handoff tools.
+Do not skip this because `list_sessions` already works. An older Annotate MCP bundle will not have listener tools.
 
 Later `/annotate-session-start` runs skip MCP reinstall unless tools are missing.
 
