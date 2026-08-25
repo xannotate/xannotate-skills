@@ -18,7 +18,7 @@ Always recommend **global** install (`-g`). Never install this skill project-loc
 
 The later-session signal is Annotate MCP (`poll_agent_session`). Do not read files from the Annotate library. Do not use Claude `FileChanged` or deeplinks as the session signal.
 
-**Ending the turn while this listener is registered is a bug.** Later handoffs will sit in the queue and never run. After the first session, your last action must be another `poll_agent_session` — not a closing “I’m watching” message.
+**Ending the turn while this listener is registered is a bug.** Later handoffs will sit in the queue and never run. After every finished recording, your last action must be another `poll_agent_session` — not a closing “I’m watching” message. That next poll resets a **30-minute idle window** and picks up anything the user queued in Annotate while you were working. Overlay clicks never interrupt the current task; they only enqueue.
 
 ## Workflow
 
@@ -59,10 +59,12 @@ The later-session signal is Annotate MCP (`poll_agent_session`). Do not read fil
    - Claude / Codex: host spawn if available; otherwise tell the user to open a new chat and paste the session id + `/annotate-session-start`.
    - **This chat stays the watcher.** Do not start a second `poll_agent_session` loop in the fork.
 
-8. **Watch later recordings** — immediately call `poll_agent_session` with this listener `sessionId` (it heartbeats and waits up to 20s, checking every **2 seconds** inside Annotate). Do not sleep-and-stop.
-   - `status: "ready"`: process `recordingSessionIds` oldest first (same steps 5–7). Then **immediately** call `poll_agent_session` again.
+8. **Watch later recordings** — immediately call `poll_agent_session` with this listener `sessionId` (it heartbeats and waits up to 20s, checking every **2 seconds** inside Annotate). Do not sleep-and-stop. Annotate keeps this listener listed while you are in-flight on a task, so the user can hand off another recording without waiting.
+   - `status: "ready"`: process `recordingSessionIds` oldest first (same steps 5–7). Then **immediately** call `poll_agent_session` again — this resets the 30-minute idle clock and drains anything queued while you were busy.
    - `status: "timeout"`: **immediately** call `poll_agent_session` again. Do not write a final message.
-   - `status: "gone"` or “Start Annotate…”: the listener died or the app quit. Tell the user. They can run `/annotate-session-start` again after opening Annotate.
+   - `status: "gone"` or “Start Annotate…”: idle for 30 minutes after the last poll, or the app quit. Tell the user. They can run `/annotate-session-start` again after opening Annotate.
+
+   Ending the turn starts the 30-minute idle clock. If you miss that window, the listener disappears from Annotate.
 
    **Fallback** if `poll_agent_session` is missing: every 2 seconds call `list_agent_sessions`. If this listener disappeared, stop. You cannot receive queued handoffs without `poll_agent_session` — ask the user to refresh Annotate MCP.
 

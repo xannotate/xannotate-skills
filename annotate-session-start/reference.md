@@ -37,7 +37,7 @@ Listener tools require the Annotate app (localhost API):
 
 If Annotate is quit, listener tools return `Start Annotate to use session handoff.`
 
-Missed heartbeats for 8 seconds remove the listener from Annotate.
+While `poll_agent_session` has returned work and the agent has not polled again, the listener stays listed (in-flight). Overlay clicks enqueue only — they do not interrupt the current task. The next `poll_agent_session` after a finished task resets a **30-minute idle** window and drains anything queued while busy. Idle listeners with no poll for 30 minutes are removed.
 
 ## First run vs later runs
 
@@ -45,7 +45,7 @@ Missed heartbeats for 8 seconds remove the listener from Annotate.
 2. Install skill if needed. On that first install, reinstall Annotate MCP even if it already exists, then this workflow.
 3. Register, set a title, run the included recording (same-chat vs parallel).
 4. Call `poll_agent_session` and **do not end the turn**.
-5. The user can click this title after the next save to queue another recording.
+5. The user can click this title after the next save to queue another recording, including while this chat is still working. After the current task, poll again so the queued recording runs.
 
 `/annotate-session-start` with no recording id: register, title, poll. Do not steal another chat’s recordings.
 
@@ -89,10 +89,11 @@ Host-agnostic. The 2-second poll lives in Annotate:
 poll_agent_session
 → gone / app quit: stop
 → ready: process recordingSessionIds (oldest first), poll_agent_session
+  (resets 30-minute idle; drains anything queued while busy)
 → timeout: poll_agent_session
 ```
 
-Do not treat a user-facing “watching for the next recording” sentence as the end of work — call `poll_agent_session` after it.
+Do not treat a user-facing “watching for the next recording” sentence as the end of work — call `poll_agent_session` after it. Ending the turn starts the 30-minute idle clock.
 
 ## First-time skill install
 
