@@ -29,21 +29,23 @@ Listener tools require the Annotate app (localhost API):
 
 | Tool | Use |
 | --- | --- |
-| `register_agent_session` | Create this chat’s listener. Optional `sessionTitle`. Returns `{ sessionId, sessionTitle }`. |
-| `set_agent_session_title` | `{ sessionId, sessionTitle }` — button label in the session-saved popup |
+| `register_agent_session` | Create this chat’s listener. Optional `sessionTitle`. Starts `status: "working"`. Returns `{ sessionId, sessionTitle, status, queuedCount }`. |
+| `set_agent_session_title` | `{ sessionId, sessionTitle }` — chip/button label in Annotate |
+| `set_agent_session_status` | `{ sessionId, status: "idle" \| "working" }` |
+| `ensure_agent_session_hooks` | Install Cursor / Claude / Codex hooks that heartbeat this listener |
 | `poll_agent_session` | **Watch loop.** Heartbeat + block up to `timeoutMs` (default 20000), checking every 2s. Returns `ready` + `recordingSessionIds`, `timeout`, or `gone`. |
-| `list_agent_sessions` | Live `{ sessionId, sessionTitle }[]` |
+| `list_agent_sessions` | Live `{ sessionId, sessionTitle, status, queuedCount }[]` |
 | `unregister_agent_session` | Stop appearing in Annotate |
 
 If Annotate is quit, listener tools return `Start Annotate to use session handoff.`
 
-While `poll_agent_session` has returned work and the agent has not polled again, the listener stays listed (in-flight). Overlay clicks enqueue only — they do not interrupt the current task. The next `poll_agent_session` after a finished task resets a **30-minute idle** window and drains anything queued while busy. Idle listeners with no poll for 30 minutes are removed.
+`register_agent_session` starts the listener as **working**. Editor hooks (`preToolUse` / `Stop` / `SessionEnd`) bind this chat and keep heartbeats going so Annotate does not drop the chip while the agent is mid-task. While `poll_agent_session` has returned work and the agent has not polled again, the listener stays listed (in-flight). Overlay clicks enqueue only — they do not interrupt the current task. The next `poll_agent_session` after a finished task resets a **30-minute idle** window and drains anything queued while busy. Idle listeners with no poll for 30 minutes are removed. Codex may require `/hooks` trust after install.
 
 ## First run vs later runs
 
 1. User copies **Session hand off** from the session-saved popup and pastes it here (includes `Session id: annotate-…`).
 2. Install skill if needed. On that first install, reinstall Annotate MCP even if it already exists, then this workflow.
-3. Register, set a title, run the included recording (same-chat vs parallel).
+3. Register (working), `ensure_agent_session_hooks`, set a title, run the included recording (same-chat vs parallel).
 4. Call `poll_agent_session` and **do not end the turn**.
 5. The user can click this title after the next save to queue another recording, including while this chat is still working. After the current task, poll again so the queued recording runs.
 
