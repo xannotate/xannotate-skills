@@ -30,7 +30,7 @@ Listener tools require the Annotate app (localhost API):
 | Tool | Use |
 | --- | --- |
 | `register_agent_session` | Create this chat’s listener. Optional `sessionTitle`. Starts `status: "working"`. Returns `{ sessionId, sessionTitle, status, queuedCount }`. |
-| `set_agent_session_title` | `{ sessionId, sessionTitle }` — chip/button label in Annotate |
+| `set_agent_session_title` | `{ sessionId, sessionTitle }` — use this chat’s sidebar/tab title |
 | `set_agent_session_status` | `{ sessionId, status: "idle" \| "working" }` |
 | `ensure_agent_session_hooks` | Install Cursor / Claude / Codex hooks that heartbeat this listener |
 | `poll_agent_session` | **Watch loop.** Heartbeat + block up to `timeoutMs` (default 20000), checking every 2s. Returns `ready` + `recordingSessionIds`, `timeout`, or `gone`. |
@@ -45,7 +45,7 @@ If Annotate is quit, listener tools return `Start Annotate to use session handof
 
 1. User copies **Session hand off** from the session-saved popup and pastes it here (includes `Session id: annotate-…`).
 2. Install skill if needed. On that first install, reinstall Annotate MCP even if it already exists, then this workflow.
-3. Register (working), `ensure_agent_session_hooks`, set a title, run the included recording (same-chat vs parallel).
+3. Register (working), `ensure_agent_session_hooks`, set the title to this chat’s sidebar/tab name, run the included recording (same-chat vs parallel).
 4. Call `poll_agent_session` and **do not end the turn**.
 5. The user can click this title after the next save to queue another recording, including while this chat is still working. After the current task, poll again so the queued recording runs.
 

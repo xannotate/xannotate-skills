@@ -41,7 +41,7 @@ The later-session signal is Annotate MCP (`poll_agent_session`). Do not read fil
 
    `register_agent_session` / `poll_agent_session` require the **Annotate app to be running**. If they return “Start Annotate to use session handoff.”, ask the user to open Annotate, then retry. Recording-read tools (`get_timeline`, etc.) still work with the app closed.
 
-3. **Register this chat** — `register_agent_session` (starts `status: "working"` so Annotate keeps this listener listed while you work). Then `ensure_agent_session_hooks` so Cursor / Claude Code / Codex hooks keep that status in sync. Then `set_agent_session_title` with a short title from this conversation or the first recording (for example `Login fix`, not the `annotate-…` id). That title is the chip/button the user sees in Annotate.
+3. **Register this chat** — `register_agent_session` (starts `status: "working"` so Annotate keeps this listener listed while you work). Then `ensure_agent_session_hooks` so Cursor / Claude Code / Codex hooks keep that status in sync. Then `set_agent_session_title` to **this chat’s visible title** — the sidebar/tab name in Cursor, Claude Code, or Codex. Copy that title (for example `Live session status strip`). Do not invent a task summary like `Login fix`. If the host has not named the chat yet, use the shortest phrase from the latest user message, then call `set_agent_session_title` again when the chat title appears. That title is the chip/button the user sees in Annotate.
 
    If `ensure_agent_session_hooks` reports Codex hooks were written, tell the user they may need to run `/hooks` in Codex and trust `annotate-session-status`. Do not skip hook install on the first run in a host.
 
