@@ -51,6 +51,8 @@ If Annotate is quit, listener tools return `Start Annotate to use session handof
 
 `/annotate-session-start` with no recording id: register, title, poll. Do not steal another chat’s recordings.
 
+**Do not poll** if this chat only received a Copy prompt (`Use this Annotate recording as the prompt`). Read that recording, then stop. No `register_agent_session`, no `poll_agent_session`.
+
 ## Same chat vs parallel
 
 Continue here when:
@@ -95,7 +97,9 @@ poll_agent_session
 → timeout: poll_agent_session
 ```
 
-Do not treat a user-facing “watching for the next recording” sentence as the end of work — call `poll_agent_session` after it. Ending the turn starts the 30-minute idle clock.
+After a finished recording, tell the user the task is done and that you are polling for new session recordings. If this session ends, they should run `/annotate-session-start` again here. Do not say the listener is still registered, or to click this chat’s title in Annotate — a stopped chat is unregistered.
+
+Do not treat that status sentence as the end of work — call `poll_agent_session` after it. Ending the turn starts the 30-minute idle clock.
 
 ## First-time skill install
 

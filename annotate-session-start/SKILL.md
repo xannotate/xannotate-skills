@@ -6,19 +6,28 @@ description: >-
   listener (sessionId + sessionTitle via MCP), runs any annotate-… id in the
   prompt, then polls every 2 seconds for recordings the user hands off from the
   session-saved popup. Never ends the turn while registered.
-  Use when the user runs /annotate-session-start, pastes a Session hand off
-  prompt, or mentions Annotate recording session handoff.
+  Use when the user runs /annotate-session-start or pastes a Session hand off
+  prompt. Do not poll for a recording that was only opened as a prompt
+  (Copy / “Use this Annotate recording as the prompt”) without that skill.
 ---
 
 # Annotate session start
 
-Rapid handoff for Annotate recordings. Register this chat as a live listener, **run any recording id in the prompt immediately**, then **keep polling**. The user can later click this chat’s title in Annotate to queue another recording — no paste.
+Rapid handoff for Annotate recordings. **Only** register and poll when this chat was started with `/annotate-session-start` (or a Session hand off prompt that says to run that skill). If the user only pasted a recording as the prompt (`Use this Annotate recording as the prompt` / Copy), run that recording and **do not** `register_agent_session` or `poll_agent_session`.
+
+When this chat did start with the skill: register as a live listener, **run any recording id in the prompt immediately**, then **keep polling**. The user can later click this chat’s title in Annotate to queue another recording — no paste.
 
 Always recommend **global** install (`-g`). Never install this skill project-local.
 
 The later-session signal is Annotate MCP (`poll_agent_session`). Do not read files from the Annotate library. Do not use Claude `FileChanged` or deeplinks as the session signal.
 
-**Ending the turn while this listener is registered is a bug.** Later handoffs will sit in the queue and never run. After every finished recording, your last action must be another `poll_agent_session` — not a closing “I’m watching” message. That next poll resets a **30-minute idle window** and picks up anything the user queued in Annotate while you were working. Overlay clicks never interrupt the current task; they only enqueue.
+**Ending the turn while this listener is registered is a bug.** Later handoffs will sit in the queue and never run. After every finished recording, tell the user the task is done, then keep polling. Use this copy (not “the listener is still registered”):
+
+> Done. Polling for new session recordings. If this session ends, run /annotate-session-start again here.
+
+Then your last action must be another `poll_agent_session`. That next poll resets a **30-minute idle window** and picks up anything the user queued in Annotate while you were working. Overlay clicks never interrupt the current task; they only enqueue.
+
+Never say the listener is still registered in Annotate, or to click this chat’s title there, especially after this chat has stopped — a stopped chat is unregistered.
 
 ## Workflow
 
@@ -41,7 +50,7 @@ The later-session signal is Annotate MCP (`poll_agent_session`). Do not read fil
 
    `register_agent_session` / `poll_agent_session` require the **Annotate app to be running**. If they return “Start Annotate to use session handoff.”, ask the user to open Annotate, then retry. Recording-read tools (`get_timeline`, etc.) still work with the app closed.
 
-3. **Register this chat** — `register_agent_session` (starts `status: "working"` so Annotate keeps this listener listed while you work). Then `ensure_agent_session_hooks` so Cursor / Claude Code / Codex hooks keep that status in sync. Then `set_agent_session_title` to **this chat’s visible title** — the sidebar/tab name in Cursor, Claude Code, or Codex. Copy that title (for example `Live session status strip`). Do not invent a task summary like `Login fix`. If the host has not named the chat yet, use the shortest phrase from the latest user message, then call `set_agent_session_title` again when the chat title appears. That title is the chip/button the user sees in Annotate.
+3. **Register this chat** — `register_agent_session` with `source: "annotate-session-start"` (starts `status: "working"` so Annotate keeps this listener listed while you work). Do not omit `source` — chats that only read recordings (`list_sessions`, `get_timeline`, and similar) must not appear in the Electron active-sessions list. Then `ensure_agent_session_hooks` so Cursor / Claude Code / Codex hooks keep that status in sync. Then `set_agent_session_title` to **this chat’s visible title** — the sidebar/tab name in Cursor, Claude Code, or Codex. Keep the same words, case, and spaces; Annotate removes dashes. Do not invent a task summary like `Login fix`. If the host has not named the chat yet, use the shortest phrase from the latest user message, then call `set_agent_session_title` again when the chat title appears. That title is the chip/button the user sees in Annotate.
 
    If `ensure_agent_session_hooks` reports Codex hooks were written, tell the user they may need to run `/hooks` in Codex and trust `annotate-session-status`. Do not skip hook install on the first run in a host.
 
@@ -61,10 +70,10 @@ The later-session signal is Annotate MCP (`poll_agent_session`). Do not read fil
    - Claude / Codex: host spawn if available; otherwise tell the user to open a new chat and paste the session id + `/annotate-session-start`.
    - **This chat stays the watcher.** Do not start a second `poll_agent_session` loop in the fork.
 
-8. **Watch later recordings** — immediately call `poll_agent_session` with this listener `sessionId` (it heartbeats and waits up to 20s, checking every **2 seconds** inside Annotate). Do not sleep-and-stop. Annotate keeps this listener listed while you are in-flight on a task, so the user can hand off another recording without waiting.
-   - `status: "ready"`: process `recordingSessionIds` oldest first (same steps 5–7). Then **immediately** call `poll_agent_session` again — this resets the 30-minute idle clock and drains anything queued while you were busy.
-   - `status: "timeout"`: **immediately** call `poll_agent_session` again. Do not write a final message.
-   - `status: "gone"` or “Start Annotate…”: idle for 30 minutes after the last poll, or the app quit. Tell the user. They can run `/annotate-session-start` again after opening Annotate.
+8. **Watch later recordings** — **only if this chat started with `/annotate-session-start`**. Then immediately call `poll_agent_session` with this listener `sessionId` (it heartbeats and waits up to 20s, checking every **2 seconds** inside Annotate). Do not sleep-and-stop. Annotate keeps this listener listed while you are in-flight on a task, so the user can hand off another recording without waiting.
+   - `status: "ready"`: process `recordingSessionIds` oldest first (same steps 5–7). Then tell the user the task is done and that you are polling for new session recordings (if this session ends, run `/annotate-session-start` again here). **Immediately** call `poll_agent_session` again — this resets the 30-minute idle clock and drains anything queued while you were busy.
+   - `status: "timeout"`: **immediately** call `poll_agent_session` again. Do not write a final “still registered” message.
+   - `status: "gone"` or “Start Annotate…”: this session ended or the app quit. Tell the user the task is done if work finished, and that they should run `/annotate-session-start` again here. Do not say the listener is still registered.
 
    Ending the turn starts the 30-minute idle clock. If you miss that window, the listener disappears from Annotate.
 
@@ -72,8 +81,10 @@ The later-session signal is Annotate MCP (`poll_agent_session`). Do not read fil
 
 ## Do not
 
+- Poll, register, or keep a watch loop if this recording prompt was not started with `/annotate-session-start` (Copy prompt / “Use this Annotate recording as the prompt” only).
 - Browse private Annotate library paths. Use MCP tools only.
 - End the turn while this listener is registered.
+- Tell the user the listener is still registered, or to click this chat’s title in Annotate, after the chat has stopped.
 - Read or stamp a recording that is not completed.
 - Invent frames, speech, or marks.
 - Install this skill without `-g`.
