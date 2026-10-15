@@ -14,7 +14,7 @@ Project-local install is wrong for this skill — recordings are not tied to one
 
 | Id | Format | Meaning |
 | --- | --- | --- |
-| Agent listener `sessionId` | `agent-…` | This chat. Returned by `register_agent_session`. Shown in Annotate as `sessionTitle`. |
+| Agent listener `sessionId` | `agent-…` locally, `cloud-agent-…` on the remote MCP | This chat. Returned by `register_agent_session`. Shown in Annotate as `sessionTitle`. |
 | Recording `sessionId` | `annotate-…` | A finished screen recording. In the Session hand off prompt and in `poll_agent_session.recordingSessionIds`. |
 
 ## MCP contract
@@ -37,7 +37,25 @@ Listener tools require the Annotate app (localhost API):
 | `list_agent_sessions` | Live `{ sessionId, sessionTitle, status, queuedCount }[]` |
 | `unregister_agent_session` | Stop appearing in Annotate |
 
-If Annotate is quit, listener tools return `Start Annotate to use session handoff.`
+If Annotate is quit, **local** listener tools return `Start Annotate to use session handoff.`
+
+## Remote MCP (cloud agents)
+
+When `ensure_agent_session_hooks` is missing, or the server is HTTP `/api/mcp`, this chat is a cloud agent:
+
+- Skip `ensure_agent_session_hooks` and the “Start Annotate” error. The desktop app does not need to be open for register or title.
+- Do not call `poll_agent_session`. It is not on the remote MCP.
+- The listener id is `cloud-agent-…`. It shows in the Annotate bar next to local listeners, with a cloud marker.
+- `register_agent_session` returns `eventsUrl`, `broadcastUrl`, `resumed`, and `next`. Follow `next` and the checklist in SKILL.md ([Cloud agents: required start](SKILL.md#cloud-agents-required-start)). `eventsUrl` is `?stream=1` with no timeout: one background curl stays open for as long as this chat is connected ([background stream](SKILL.md#background-stream-mandatory)). Both URLs carry a signed token scoped to this listener (valid 7 days, cannot enqueue or read other listeners), so no `Authorization` header or `ANNOTATE_MCP_KEY` is needed. A `401` means the token expired: register again with `resumeSessionId`.
+- The open curl is the presence signal. Closing it sets `disconnectedAt` and Annotate shows the disconnect icon. The row stays for 5 minutes (`removeInMs`), then it leaves the list. Reconnecting or resuming clears the disconnect. A chat that never opens the stream drops off after the short backstop lease.
+- Pass the prompt's attached `annotate-…` id as `recordingSessionId`. Pass this chat's existing `cloud-agent-…` id as `resumeSessionId`. If `resumed` is false, the old row was gone and this is a new session. Read a ready recording now; an upload still in progress arrives later as `handoff.ready`. Start the background curl only after that read.
+- Listening is mandatory. Start the curl once, then watch its log and do every `handoff.ready`, including recordings already in the queue. After each task, `set_agent_session_title` and go straight back to watching the log. Do not stop, and do not start a second curl. Hosts that can wake on log output (Cursor `notify_on_output` on `event: handoff.ready`, Claude Code background tasks) watch `/tmp/annotate-$SESSION_ID.log`. Otherwise `tail -n0 -F` that log for the next event, and run that tail again after every task. The tail does not open another stream.
+- `handoff.ready` carries `recordingSessionIds` only after that cloud copy is `complete`. Uploading ids stay queued. `session.gone` means register again without `resumeSessionId`.
+- Reading a queued recording with the MCP read tools (`get_timeline`, `get_session_guide`, and similar) also removes it from this listener's queue, so the Annotate queue count drops even if it was not taken from the stream.
+- Only recordings the user saved with Cloud on can be handed off. Local-only recordings stay disabled in the Active sessions list.
+- If the user asks to stop, call `disconnect_agent_session` (or `POST` `{ "event": "agent.disconnect", "listenerId" }` to `broadcastUrl`). Stopping the chat also closes the curl, which shows the disconnect icon. The row stays for 5 minutes. `unregister_agent_session` removes the row; use it only when the user asks to remove the session.
+- To resume, run `/annotate-session-start` in the same chat and pass `resumeSessionId`. If that row is already gone, register returns `resumed: false` and a new id.
+- Title and status stay on the MCP tools. `POST $broadcastUrl` with `{ "event": "agent.title" | "agent.status", "listenerId", "data" }` is the alternative.
 
 `register_agent_session` starts the listener as **working**. Editor hooks (`preToolUse` / `Stop` / `SessionEnd`) bind this chat and keep heartbeats going so Annotate does not drop the chip while the agent is mid-task. While `poll_agent_session` has returned work and the agent has not polled again, the listener stays listed (in-flight). Overlay clicks enqueue only — they do not interrupt the current task. The next `poll_agent_session` after a finished task resets a **30-minute idle** window and drains anything queued while busy. Idle listeners with no poll for 30 minutes are removed. Codex may require `/hooks` trust after install.
 
