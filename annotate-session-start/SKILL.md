@@ -4,19 +4,16 @@ description: >-
   Starts Annotate recording session handoff for coding agents. Installs this
   skill globally if missing, registers this chat as a live listener via MCP,
   runs any annotate-… id in the prompt, then keeps watching for recordings the
-  user hands off. Cloud agents (remote MCP) skip hooks. If the host can keep a
-  detached curl, that curl appends the SSE eventsUrl to a log and this chat
-  polls the log after every task. If it cannot, this chat checks the queue
-  with check_agent_session, then subscribes to waitUrl until one new recording
-  is written to the log.
-  Once registered, the chat stays in the listening loop until disconnected:
-  every turn ends by polling that log (or, with no background curl, by
-  checking the queue and subscribing), and every delivered recording is done,
-  including anything already queued. A finished task, an empty queue, or a
-  timeout is never a reason to stop.
-  Use when the user runs /annotate-session-start or pastes a Session hand off
-  prompt. Do not poll for a recording that was only opened as a prompt
-  (Copy / “Use this Annotate recording as the prompt”) without that skill.
+  user hands off. Cloud agents (remote MCP) skip hooks. Once registered, stay
+  in the listening loop until disconnected: every turn ends by polling (log
+  poll, or check_agent_session plus subscribe), and every delivered recording
+  is done, including anything already queued. A finished task, an empty queue,
+  or a timeout is never a reason to stop. If the user clicks Stop in the agent
+  chat, the loop ends for good: do not revive polling, kill the background
+  SSE curl, and disconnect. Use when the user runs /annotate-session-start or
+  pastes a Session hand off prompt. Do not poll for a recording that was only
+  opened as a prompt (Copy / “Use this Annotate recording as the prompt”)
+  without that skill.
 ---
 
 # Annotate session start
@@ -35,8 +32,8 @@ wait for the next recording → do it → set_agent_session_title → tell the u
 
 These rules override any habit of finishing with a summary. Breaking one of them leaves the user's recordings stuck in the queue.
 
-1. **The loop has only these exits:** `session.disconnected`; `session.gone` that a new `register_agent_session` cannot recover; on the local MCP, `status: "gone"` or “Start Annotate to use session handoff.”; or the user telling you to stop. Nothing else ends the loop.
-2. **These are never exits:** the task is done; the queue is empty; a wait timed out, even many times in a row; the user has not replied; the conversation is long; you think the work is complete. When any of these happens, wait again.
+1. **The loop has only these exits:** `session.disconnected`; `session.gone` that a new `register_agent_session` cannot recover; on the local MCP, `status: "gone"` or “Start Annotate to use session handoff.”; the user telling you to stop; or the user force-stopping this chat (see rule 6). Nothing else ends the loop.
+2. **These are never exits:** the task is done; the queue is empty; a wait timed out, even many times in a row; the user has not replied; the conversation is long; you think the work is complete; a command approval was declined, dismissed, or blocked. Declining an approval is not the user telling you to stop. Follow rule 7, then wait again.
 3. **A reply with no tool call ends your turn.** Ending your turn while nothing is watching for the next recording is the same as stopping. Polling happens in this chat, never in a subagent and never as a background task. So, while listening:
    - **Local MCP:** the last action of every turn is a `poll_agent_session` call. Never send a text-only reply. After a task, write “Done. Listening…” and call `poll_agent_session` in the same turn.
    - **Cloud, background curl:** the last action of every turn is the [poll command](#poll-the-log), in the foreground. The detached curl only writes the log. It does not wake you, and you do not wait to be woken.
@@ -44,6 +41,16 @@ These rules override any habit of finishing with a summary. Breaking one of them
    - **A poll or subscribe the host moved to the background is still running in this chat.** Some hosts return before a long command ends and keep it as a background terminal (Codex: “Started background terminal”, a session id, “No output yet”). That command has not returned yet. Keep reading its output in this same turn until it prints a result: in Codex, call `write_stdin` with that session id, empty `chars`, and the largest `yield_time_ms` it allows, again and again. Never end the turn, and never write “I'll continue with any recording that arrives,” while a poll or subscribe has not printed its result.
 4. **Before you end any turn, check all three:** (a) every delivered recording id is done or forked, and each finished id is in the done file; (b) you called `set_agent_session_title` after the last one; (c) the poll, or the foreground check and subscribe, is running right now, as in rule 3. If any answer is no, fix it before you end the turn.
 5. **Start delivered work right away.** When a recording arrives, start it in that same turn. Do not ask the user for permission first, and do not wait for them to reply.
+6. **A user force-stop ends the loop. Do not revive it.** The user force-stopped this chat only when they clicked Stop in the agent chat, so your last turn was cut off mid-tool. A command that never started is not a force-stop. On the next turn after a real Stop:
+   - Do not call `poll_agent_session`, poll the log, call `check_agent_session`, or run the subscribe again. Do not restart the background curl. The new message does not restart the loop, even if it is unrelated to the stop.
+   - Stop every background process this listener started: the background SSE curl loop and any `waitUrl` subscribe still running (`kill "$(cat "$PID")" 2>/dev/null; pkill -f "/tmp/annotate-$SESSION_ID" 2>/dev/null; rm -f "$PID"`). In Cursor, also kill any background terminal still running the curl loop, the poll, or the subscribe.
+   - On the remote MCP, call `disconnect_agent_session` with this session id.
+   - Answer only the user's new message, then end the turn with no poll.
+   - Listen again only when the user runs `/annotate-session-start` again in this chat or tells you to resume listening. Then follow [Resume](#resume).
+7. **A wait that never started is not a Stop.** A declined or dismissed command approval, a permission or sandbox error, a curl that exited before `: open`, or a subscribe the user did not allow is not rule 6. Do not call `disconnect_agent_session`. Do not say you are listening. Nothing is waiting, so a recording queued in that gap sits there until a watch is actually running.
+   - Say that plainly, including why. Example: "Not watching. The wait command was not allowed, so a queued recording will not be picked up until it is."
+   - Call `check_agent_session` and do every id in `inFlightRecordingIds` and `queuedRecordingIds`. That call does not need the shell.
+   - Ask the user to allow the wait command, or a background process for this chat. Then start the subscribe again. Stay registered.
 
 ## Cloud agents: required start
 
@@ -197,7 +204,7 @@ while [ $(( $(date +%s) - START )) -lt 540 ]; do
 done
 ```
 
-If the 9-minute budget ends with nothing written, run the same subscribe again right away. Do not write a message, and do not end the turn. A subscribe that was killed or errored means the same.
+If the 9-minute budget ends with nothing written, run the same subscribe again right away. Do not write a message, and do not end the turn. A subscribe that started and was then killed or errored means the same: run it again. A subscribe that never started (the user declined the approval, or the command was blocked) is rule 7 of the [listening loop](#listening-loop-mandatory--read-before-anything-else), not a Stop and not a silent retry.
 
 - `handoff.ready` in the log: poll, do the `NEXT` id, then repeat from step 1. Ids already in the done file are skipped, including a `redelivered` replay.
 - `{"error":"Unauthorized"}` or `event: session.gone`: `register_agent_session` with `resumeSessionId` and use the new `waitUrl`. Truncate the log.
@@ -214,16 +221,20 @@ curl -sS -X POST "$BROADCAST_URL" \
 
 `agent.status` uses `"data":{"status":"working"}` or `"idle"`. Prefer `set_agent_session_title` when a task is done: that marks the chat idle. Then poll the log, or call `check_agent_session` when no background curl is writing it.
 
-**Ending the turn without the poll, or without the foreground check and subscribe, is a bug.** Queued recordings will never run. In background mode the chat also shows disconnected once the curl dies. After every finished recording, `set_agent_session_title` to a short phrase of the latest change you implemented, tell the user the task is done, append the id to the done file, and poll again (rule 3 of the [listening loop](#listening-loop-mandatory--read-before-anything-else)). Use this copy (not “the listener is still registered”):
+**Ending the turn without the poll, or without the foreground check and subscribe, is a bug.** Queued recordings will never run. In background mode the chat also shows disconnected once the curl dies. After every finished recording, `set_agent_session_title` to a short phrase of the latest change you implemented, tell the user the task is done, append the id to the done file, and poll again (rule 3 of the [listening loop](#listening-loop-mandatory--read-before-anything-else)).
+
+Say this only when a watch is actually running (the background log shows `: open` and the pid is alive, or the foreground subscribe has started and is waiting). Do not say it while a command is blocked on approval, denied, or not started:
 
 > Done. Listening for new session recordings. If this session ends, run /annotate-session-start again here.
-Overlay clicks never interrupt the current task; they only enqueue.
+
+If the watch is not running, say so in the words of rule 7. Do not announce that you are listening. Overlay clicks never interrupt the current task; they only enqueue.
 
 ### Disconnect
 
 The disconnect icon appears when the background curl stops (you hit Stop, or the chat closes) and also when you call `disconnect_agent_session`. Call `disconnect_agent_session` with this session id (or `POST` `broadcastUrl` with `{"event":"agent.disconnect","listenerId":"<sessionId>"}`, no header) when:
 
 - the user asks to stop watching;
+- the user force-stopped this chat with Stop (rule 6 of the [listening loop](#listening-loop-mandatory--read-before-anything-else)); kill the background curl and any subscribe first;
 - you are about to end this chat or stop on purpose.
 
 That keeps the row for 5 minutes. Do not call `unregister_agent_session` unless the user asks to remove the session.
@@ -317,7 +328,10 @@ Never say the listener is still registered in Annotate, or to click this chat’
 - End the turn while this listener is registered and the next poll or foreground check is not running (see rule 3 of the [listening loop](#listening-loop-mandatory--read-before-anything-else)). On the local MCP, that means never end the turn without a `poll_agent_session` call as the last action. On the remote MCP, the last action is the log poll, or `check_agent_session` and the one-shot subscribe.
 - Stop listening for new recordings, in the background or the foreground, unless one of the exits in rule 1 happens.
 - Treat a finished task, an empty queue, or a timeout (even many in a row) as a reason to stop, summarize, or ask the user what to do next.
-- Let a poll or subscribe end (recording, timeout, killed, or errored) without starting the next one right away.
+- Let a poll or subscribe end (recording, timeout, killed, or errored) without starting the next one right away. The exception is a user force-stop (rule 6): then do not start another one. A declined approval is rule 7, not rule 6.
+- Revive the poll, the subscribe, or the background curl after the user clicked Stop in the agent chat, in the foreground or the background. Kill the background SSE stream and any running subscribe, disconnect, and wait for `/annotate-session-start` again.
+- Treat a declined command approval, a permission error, or a wait that never started as a user Stop. Do not disconnect for that.
+- Say "Done. Listening…" when no wait is running. Say that nothing is watching, and why.
 - Start the cloud curl without network permission in a sandboxed host, or treat it as connected before the log shows `: open` and the pid is alive.
 - Poll the log from a subagent, or as a background task. The poll runs in this chat.
 - End the turn while a poll or subscribe that the host moved to a background terminal has not printed its result. Keep reading that terminal's output instead.
