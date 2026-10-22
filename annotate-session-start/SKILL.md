@@ -54,7 +54,7 @@ These rules override any habit of finishing with a summary. Breaking one of them
 
 ## Cloud agents: required start
 
-Do this first when this chat is a cloud agent (the MCP server is `/api/mcp`, or `ensure_agent_session_hooks` is missing) and the prompt ran `/annotate-session-start`.
+Do this first when this chat is a cloud agent (the MCP server is `/mcp`, or `ensure_agent_session_hooks` is missing) and the prompt ran `/annotate-session-start`.
 
 1. Find the `annotate-…` id in the prompt (`Session id: annotate-…`, or right after `/annotate-session-start`). That id is the **initial recording**. Never skip it, and never treat “Then run /annotate-session-start.” as an empty start.
 2. `register_agent_session` with `source: "annotate-session-start"`, `recordingSessionId` set to that id, and `resumeSessionId` set to the `cloud-agent-…` id this chat already has (omit `resumeSessionId` on a brand-new chat). If there is no recording id, omit `recordingSessionId`. If the result says `resumed: false`, this is a new session.
@@ -74,7 +74,7 @@ The later-session signal is Annotate MCP `poll_agent_session` on the local MCP, 
 
 ## Remote MCP (cloud agents)
 
-Use this branch when `ensure_agent_session_hooks` is not in the tool list, or the MCP server is the HTTP endpoint `/api/mcp`.
+Use this branch when `ensure_agent_session_hooks` is not in the tool list, or the MCP server is the HTTP endpoint `/mcp`.
 
 - Do not call `ensure_agent_session_hooks`. There are no editor hooks on a cloud agent.
 - Do not ask the user to start the Annotate app. Listener tools do not need the desktop app, and “Start Annotate to use session handoff.” does not apply.
@@ -106,7 +106,7 @@ The log is not the queue, because nothing is appending to it until you subscribe
 2. `check_agent_session` with this chat's `sessionId`. It heartbeats the lease and does not take recordings off the queue.
 3. `disconnectedAt` greater than 0 means this chat was disconnected. Stop, the same as `session.disconnected`. "Agent session is not registered." means the row is gone: treat it as `session.gone`.
 4. Do every id in `inFlightRecordingIds`, then every id in `queuedRecordingIds`, that is not already in the done file. One at a time, oldest first (`get_timeline`, steps 5–8). Skip an in-flight id this chat already finished. After each one, `echo "<id>" >> "$DONE"`, `set_agent_session_title`, and call `check_agent_session` again. A recording queued while you worked shows up on that next check.
-5. When both lists are empty, subscribe once, below. Then [poll the log](#poll-the-log) right away and do the `NEXT` id. Then repeat from step 1.
+5. When both lists are empty, call `subscribe_agent_session` with this chat's `sessionId` and append the returned text to the log. `event: timeout` is not a recording and is not an empty queue: call `check_agent_session` and do any unfinished ids before calling it again. If that tool is missing or the call errors, call `check_agent_session` first and do every unfinished in-flight id, then every queued id. Only when both lists are empty, subscribe once with the curl below. Then [poll the log](#poll-the-log) right away and do the `NEXT` id. Then repeat from step 1.
 
 Touch `$DONE` before the first subscribe (`touch /tmp/annotate-$SESSION_ID.done`).
 
@@ -130,7 +130,7 @@ while [ $(( $(date +%s) - START )) -lt 540 ]; do
 done
 ```
 
-If the 9-minute budget ends with nothing written, run the same subscribe again right away. Do not write a message, and do not end the turn. A subscribe that started and was then killed or errored means the same: run it again. A subscribe that never started (the user declined the approval, or the command was blocked) is rule 7 of the [listening loop](#listening-loop-mandatory--read-before-anything-else), not a Stop and not a silent retry.
+If the 9-minute budget ends with nothing written, call `check_agent_session` and do any unfinished ids, then run the same subscribe again only if both lists are empty. Do not write a message, and do not end the turn. A subscribe that started and was then killed or errored means the same: check, then subscribe again only if both lists are empty. A subscribe that never started (the user declined the approval, or the command was blocked) is rule 7 of the [listening loop](#listening-loop-mandatory--read-before-anything-else), not a Stop and not a silent retry.
 
 - `handoff.ready` in the log: poll, do the `NEXT` id, then repeat from step 1. Ids already in the done file are skipped, including a `redelivered` replay.
 - `{"error":"Unauthorized"}` or `event: session.gone`: `register_agent_session` with `resumeSessionId` and use the new `waitUrl`. Truncate the log.
