@@ -15,6 +15,8 @@ Session title: …
 2. `register_agent_session` with `source: "annotate-session-start"`, `liveRole` from `Live role`, `liveRequestId` from `Live request`, and `sessionTitle` from `Session title`. Then `ensure_agent_session_hooks` (SKILL.md step 3).
 3. `poll_agent_session`. The request from the prompt arrives as a poll item. Handle items as below, `reply_agent_request` for each, and keep polling exactly as SKILL.md step 9 says. Never end the turn while registered.
 
+A prompt with no `Live request:` line is a warm start: Annotate opened this chat when Live turned on, so the user confirms it once before any work. Omit `liveRequestId` when you register, then poll. Work arrives on poll. Every Live task in that run comes to this chat, one after another, so stay in the loop.
+
 Do not read an unfinished recording. Live snapshots are frozen for you; use `get_agent_request` and `get_agent_request_frame`, never `get_timeline` on the live recording id.
 
 ## Task role
