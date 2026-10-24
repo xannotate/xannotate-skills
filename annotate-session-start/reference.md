@@ -34,7 +34,7 @@ Listener tools require the Annotate app (localhost API):
 | `set_agent_session_title` | `{ sessionId, sessionTitle }` — short phrase of the latest implemented change; replace after every finished recording |
 | `set_agent_session_status` | `{ sessionId, status: "idle" \| "working" }` |
 | `ensure_agent_session_hooks` | Install Cursor / Claude / Codex hooks that heartbeat this listener |
-| `poll_agent_session` | **Watch loop.** Heartbeat + block up to `timeoutMs` (default 20000), checking every 2s. Returns `ready` + `recordingSessionIds`, `timeout`, or `gone`. |
+| `poll_agent_session` | **Watch loop.** Heartbeat + block up to `timeoutMs` (default 540000, max 1800000), checking every 2s. Returns `ready` + `recordingSessionIds`, `timeout`, or `gone`. |
 | `list_agent_sessions` | Live `{ sessionId, sessionTitle, status, queuedCount }[]` |
 | `unregister_agent_session` | Stop appearing in Annotate |
 
