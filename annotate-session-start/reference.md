@@ -33,7 +33,6 @@ Listener tools require the Annotate app (localhost API):
 | `check_agent_session` | Remote MCP only. Read this listener's in-flight and queued recording ids without taking them off the queue, and heartbeat the lease. This is the queue read on the remote MCP. When both lists are empty, subscribe to `waitUrl`. |
 | `set_agent_session_title` | `{ sessionId, sessionTitle }` — short phrase of the latest implemented change; replace after every finished recording |
 | `set_agent_session_status` | `{ sessionId, status: "idle" \| "working" }` |
-| `ensure_agent_session_hooks` | Install Cursor / Claude / Codex hooks that heartbeat this listener |
 | `poll_agent_session` | **Watch loop.** Heartbeat + block up to `timeoutMs` (default 540000, max 1800000), checking every 2s. Returns `ready` + `recordingSessionIds`, `timeout`, or `gone`. |
 | `list_agent_sessions` | Live `{ sessionId, sessionTitle, status, queuedCount }[]` |
 | `unregister_agent_session` | Stop appearing in Annotate |
@@ -42,9 +41,9 @@ If Annotate is quit, **local** listener tools return `Start Annotate to use sess
 
 ## Remote MCP (cloud agents)
 
-When `ensure_agent_session_hooks` is missing, or the server is HTTP `/mcp`, this chat is a cloud agent:
+When `poll_agent_session` is missing, or the server is HTTP `/mcp`, this chat is a cloud agent:
 
-- Skip `ensure_agent_session_hooks` and the “Start Annotate” error. The desktop app does not need to be open for register or title.
+- Skip `poll_agent_session` and the “Start Annotate” error. The desktop app does not need to be open for register or title.
 - Do not call `poll_agent_session`. It is not on the remote MCP.
 - The listener id is `cloud-agent-…`. It shows in the Annotate bar next to local listeners, with a cloud marker.
 - `register_agent_session` returns `eventsUrl`, `waitUrl`, `broadcastUrl`, `inFlightRecordingIds`, `queuedRecordingIds`, `resumed`, and `next`. Follow `next` and the checklist in SKILL.md ([Cloud agents: required start](cloud.md#cloud-agents-required-start)). Do every in-flight and queued id before subscribing; skip an in-flight id this chat already finished. `eventsUrl` is still returned (`?stream=1`, no timeout) but this skill does not use it. Do not start a detached curl on it. `waitUrl` is the [subscribe](cloud.md#subscribe-and-done-file) (one recording, then the server closes it). `check_agent_session` returns the same URLs plus the current in-flight and queued ids, and it heartbeats the lease. It does not drain the queue. The URLs carry a signed token scoped to this listener (valid 7 days, cannot enqueue or read other listeners), so no `Authorization` header or `ANNOTATE_MCP_KEY` is needed. A `401` means the token expired: register again with `resumeSessionId`.
@@ -58,13 +57,13 @@ When `ensure_agent_session_hooks` is missing, or the server is HTTP `/mcp`, this
 - To resume, run `/annotate-session-start` in the same chat and pass `resumeSessionId`. If that row is already gone, register returns `resumed: false` and a new id.
 - Title and status stay on the MCP tools. `POST $broadcastUrl` with `{ "event": "agent.title" | "agent.status", "listenerId", "data" }` is the alternative.
 
-`register_agent_session` starts the listener as **working**. Editor hooks (`preToolUse` / `Stop` / `SessionEnd`) bind this chat and keep heartbeats going so Annotate does not drop the chip while the agent is mid-task. While `poll_agent_session` has returned work and the agent has not polled again, the listener stays listed (in-flight). Overlay clicks enqueue only — they do not interrupt the current task. The next `poll_agent_session` after a finished task resets a **30-minute idle** window and drains anything queued while busy. Idle listeners with no poll for 30 minutes are removed. Codex may require `/hooks` trust after install.
+`register_agent_session` starts the listener as **working**. Polling alone decides its state; there are no editor hooks. While it waits in `poll_agent_session` it is connected. After a poll hands it work it has a **30-minute working lease** to come back, and any Annotate tool call for this listener (title, status) refreshes it. Otherwise it must poll again within **90 seconds** of the last poll returning. Past its lease it shows **disconnected**, stays listed for 5 minutes, and the next `poll_agent_session` reconnects it. After that it is removed and `poll_agent_session` returns `gone`: register again. Overlay clicks enqueue only — they do not interrupt the current task.
 
 ## First run vs later runs
 
 1. User copies **Session hand off** from the session-saved popup and pastes it here (includes `Session id: annotate-…`).
 2. Install skill if needed. On that first install, reinstall Annotate MCP even if it already exists, then this workflow.
-3. Register (working), `ensure_agent_session_hooks`, set the title from the current ask, run the included recording (same-chat vs parallel), then retitle from the latest implemented change.
+3. Register (working), set the title from the current ask, run the included recording (same-chat vs parallel), then retitle from the latest implemented change.
 4. Call `poll_agent_session` and **do not end the turn**.
 5. The user can click this title after the next save to queue another recording, including while this chat is still working. After the current task, poll again so the queued recording runs.
 
@@ -131,11 +130,7 @@ Ending the turn stops the loop and starts the 30-minute idle clock. If you miss 
 
 After a finished recording, `set_agent_session_title` to a short phrase of the latest implemented change, tell the user the task is done, and that you are polling for new session recordings. If this session ends, they should run `/annotate-session-start` again here. Do not say the listener is still registered, or to click this chat’s title in Annotate — a stopped chat is unregistered.
 
-Do not treat that status sentence as the end of work — call `poll_agent_session` after it. Ending the turn starts the 30-minute idle clock.
-
-## Codex hooks
-
-On the local MCP, if `ensure_agent_session_hooks` reports Codex hooks were written, tell the user they may need to run `/hooks` in Codex and trust `annotate-session-status`.
+Do not treat that status sentence as the end of work — call `poll_agent_session` after it. Ending the turn without polling shows this chat disconnected after 90 seconds.
 
 ## First-time skill install
 

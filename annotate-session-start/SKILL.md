@@ -4,7 +4,7 @@ description: >-
   Starts Annotate recording session handoff for coding agents. Installs this
   skill globally if missing, registers this chat as a live listener via MCP,
   runs any annotate-… id in the prompt, then keeps watching for recordings the
-  user hands off. Cloud agents (remote MCP) skip hooks. Once registered, stay
+  user hands off. Polling alone keeps the listener connected. Once registered, stay
   in the listening loop until disconnected: after each recording, send the
   user feedback (what was done, the recording's intent, how you answer it)
   before checking the queue; every turn ends by checking the queue, then
@@ -71,11 +71,11 @@ These rules override any habit of finishing with a summary. Breaking one of them
 
 ## Cloud agents: required start
 
-A cloud agent (the MCP server is `/mcp`, or `ensure_agent_session_hooks` is missing) that ran `/annotate-session-start` must follow the [required start checklist](cloud.md#cloud-agents-required-start) first. The `annotate-…` id in the prompt is the **initial recording**: register with it as `recordingSessionId`, obey `next`, and do that work before listening. Never skip it.
+A cloud agent (the MCP server is `/mcp`, or `poll_agent_session` is missing) that ran `/annotate-session-start` must follow the [required start checklist](cloud.md#cloud-agents-required-start) first. The `annotate-…` id in the prompt is the **initial recording**: register with it as `recordingSessionId`, obey `next`, and do that work before listening. Never skip it.
 
 Local MCP chats still run the attached id first (step 4 of the workflow).
 
-**Annotate Live:** if the prompt has `Live role:`, read [live.md](live.md) and follow it instead of steps 4–5 of the required start checklist. Its steps 1–3 and workflow step 9 still apply.
+**Annotate Live:** if the prompt has `Live role:`, or this chat was already the Annotate Live coordinator, this chat is the Live coordinator. Read [live.md](live.md) and follow it instead of steps 4–5 of the required start checklist. Its steps 1–3 and workflow step 9 still apply.
 
 Always recommend **global** install (`-g`). Never install this skill project-local.
 
@@ -83,9 +83,9 @@ The later-session signal is Annotate MCP `poll_agent_session` on the local MCP, 
 
 ## Remote MCP (cloud agents)
 
-Use this branch when `ensure_agent_session_hooks` is not in the tool list, or the MCP server is the HTTP endpoint `/mcp`.
+Use this branch when `poll_agent_session` is not in the tool list, or the MCP server is the HTTP endpoint `/mcp`.
 
-Do not call `ensure_agent_session_hooks` or `poll_agent_session`, and do not ask the user to start the Annotate app. Tools, register fields, and what gets delivered are in [Remote MCP setup](cloud.md#remote-mcp-setup).
+Do not call `poll_agent_session`, and do not ask the user to start the Annotate app. Tools, register fields, and what gets delivered are in [Remote MCP setup](cloud.md#remote-mcp-setup).
 
 Startup is [Cloud agents: required start](cloud.md#cloud-agents-required-start). Do not subscribe until that checklist's read step is done. Do not start a detached curl on `eventsUrl`.
 
@@ -116,9 +116,8 @@ Never say the listener is still registered in Annotate, or to click this chat’
 
    On the **local** MCP, `register_agent_session` / `poll_agent_session` require the **Annotate app to be running**. If they return “Start Annotate to use session handoff.”, ask the user to open Annotate, then retry. Recording-read tools (`get_timeline`, etc.) still work with the app closed. On the **remote** MCP, ignore that error and follow [Remote MCP (cloud agents)](#remote-mcp-cloud-agents).
 
-3. **Register this chat** — `register_agent_session` with `source: "annotate-session-start"`. On the remote MCP also pass `recordingSessionId` when the prompt has an attached `annotate-…` id, and `resumeSessionId` when this chat already has a `cloud-agent-…` id. Do not omit `source` — chats that only read recordings (`list_sessions`, `get_timeline`, and similar) must not appear in the Electron active-sessions list. On the local MCP, then `ensure_agent_session_hooks` so Cursor / Claude Code / Codex hooks keep that status in sync. On the remote MCP, skip hooks. Then `set_agent_session_title` with a short phrase of the current ask (from the included recording or the latest user message), not the host chat tab name and not the `annotate-…` id. Annotate removes dashes — use spaces. That title is the chip/button in the Active sessions list.
+3. **Register this chat** — `register_agent_session` with `source: "annotate-session-start"`. On the remote MCP also pass `recordingSessionId` when the prompt has an attached `annotate-…` id, and `resumeSessionId` when this chat already has a `cloud-agent-…` id. Do not omit `source` — chats that only read recordings (`list_sessions`, `get_timeline`, and similar) must not appear in the Electron active-sessions list. Then `set_agent_session_title` with a short phrase of the current ask (from the included recording or the latest user message), not the host chat tab name and not the `annotate-…` id. Annotate removes dashes — use spaces. That title is the chip/button in the Active sessions list.
 
-   Do not skip hook install on the first local run in a host. If Codex hooks were written, see [Codex hooks](reference.md#codex-hooks).
 
 4. **Run the included recording now** — on the **remote** MCP, follow [Cloud agents: required start](cloud.md#cloud-agents-required-start): pass the id as `recordingSessionId` and obey `next`. On the **local** MCP, if the prompt has an `annotate-…` id, read it and do the work (steps 5–8) **before** the first `poll_agent_session`. Do not read a session that is not completed. If there is no recording id, skip this step.
 

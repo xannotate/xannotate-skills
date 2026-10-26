@@ -4,9 +4,9 @@ Detail for the remote MCP branch of [SKILL.md](SKILL.md). Rule numbers refer to 
 
 ## Remote MCP setup
 
-Use this branch when `ensure_agent_session_hooks` is not in the tool list, or the MCP server is the HTTP endpoint `/mcp`.
+Use this branch when `poll_agent_session` is not in the tool list, or the MCP server is the HTTP endpoint `/mcp`.
 
-- Do not call `ensure_agent_session_hooks`. There are no editor hooks on a cloud agent.
+- Do not call `poll_agent_session`. A cloud agent listens with `check_agent_session` and `subscribe_agent_session`.
 - Do not ask the user to start the Annotate app. Listener tools do not need the desktop app, and “Start Annotate to use session handoff.” does not apply.
 - Do not call `poll_agent_session`. It is not on the remote MCP.
 - `register_agent_session` (with `source: "annotate-session-start"` and the attached `recordingSessionId`), `check_agent_session`, `set_agent_session_title`, `set_agent_session_status`, and `disconnect_agent_session` go through MCP. Register returns `eventsUrl`, `waitUrl`, `broadcastUrl`, `inFlightRecordingIds`, `queuedRecordingIds`, and `next`. Follow [Cloud agents: required start](#cloud-agents-required-start). `eventsUrl` is returned but this skill does not use it. `check_agent_session` is the queue read. It does not take recordings off the queue. Listening is that check, then a one-shot subscribe on `waitUrl`.
@@ -15,7 +15,7 @@ Use this branch when `ensure_agent_session_hooks` is not in the tool list, or th
 
 ## Cloud agents: required start
 
-Do this first when this chat is a cloud agent (the MCP server is `/mcp`, or `ensure_agent_session_hooks` is missing) and the prompt ran `/annotate-session-start`.
+Do this first when this chat is a cloud agent (the MCP server is `/mcp`, or `poll_agent_session` is missing) and the prompt ran `/annotate-session-start`.
 
 1. Find the `annotate-…` id in the prompt (`Session id: annotate-…`, or right after `/annotate-session-start`). That id is the **initial recording**. Never skip it, and never treat “Then run /annotate-session-start.” as an empty start.
 2. `register_agent_session` with `source: "annotate-session-start"`, `recordingSessionId` set to that id, and `resumeSessionId` set to the `cloud-agent-…` id this chat already has (omit `resumeSessionId` on a brand-new chat). If there is no recording id, omit `recordingSessionId`. If the result says `resumed: false`, this is a new session.
