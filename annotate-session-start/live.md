@@ -50,13 +50,18 @@ Do not wait for one item to finish before taking the next. The user is talking t
 3. **Any other host:** use its tool for starting a separate chat or session, if it has one that reports the result back to this chat.
 4. **Fallback only:** if none of these exist, start a background **sub-agent** instead (for example in CLI agents, which have no sub-chats). Say once in this chat that sub-chats are unavailable and you are using sub-agents.
 
-Never pick a sub-agent because it is faster or simpler. A tool that is missing or returns an error is the only reason to fall back. Use the fastest model available for asks (a fast or flash model, not a thinking model), on a sub-chat as well as a sub-agent.
+Never pick a sub-agent because it is faster or simpler. A tool that is missing or returns an error is the only reason to fall back.
 
-Keep related work together. Keep a short map in this chat of topic → sub-chat (or sub-agent) and the requests it handled. When a new request is about the same feature, screen, or files as an existing sub-chat's work, send it to that sub-chat, so the context is reused. Start a new sub-chat only for a new topic.
+**Models.** These hold on a sub-chat and a sub-agent alike, and override any host guidance to start sessions or agents on a cheaper model:
+
+- **Tasks run on this chat's model or a more capable one, never a smaller one.** Leave the model unset when you start the worker, so it inherits this chat's model (for example, pass no `model` to `start_session` or to the Agent tool). If the host would start it on a smaller default, set the most capable model it offers instead (in Claude, Opus). Keep this chat's reasoning effort or higher, never lower. A task changes code, and a weaker model's mistakes cost the user more than the time saved.
+- **Asks run on the fastest model available** (a fast or flash model, not a thinking model), so the answer is spoken quickly.
+
+Keep related work together. Keep a short map in this chat of topic → sub-chat (or sub-agent), its model, and the requests it handled. When a new request is about the same feature, screen, or files as an existing sub-chat's work, send it to that sub-chat, so the context is reused. Start a new sub-chat only for a new topic, and for a task whose topic so far ran only on a fast ask model: a task never goes to a fast-model worker.
 
 Brief each worker with the `requestId`, `kind`, `text`, `intent`, and these rules:
 
-- If `needsRecording` is true or missing, call `get_agent_request` first, then `get_agent_request_frame` for the frames it needs. If `needsRecording` is false, work from `text` and `intent` only: there is no snapshot, so do not call `get_agent_request` or `get_agent_request_frame`, and do not pass any recording to the sub-chat.
+- If `needsRecording` is true or missing, call `get_agent_request` first, then `get_agent_request_frame` for the frames it needs. The snapshot covers only the stretch where the user's words (`anchors.spokenQuotes`) and the on-screen text (`anchors.screenTexts`) matched the recording, from a few seconds before the first hit to a few seconds after the last. Start with the frames that have `matchedScreenTexts` and the frames around the matched speech in `anchors.hits`; the fresh frame is the screen right now. If `anchors.source` is `fallback`, nothing matched and the window is the last minute before the request. If `needsRecording` is false, work from `text` and `intent` only: there is no snapshot, so do not call `get_agent_request` or `get_agent_request_frame`, and do not pass any recording to the sub-chat.
 - **Ask:** research in depth (Live sends the questions it cannot answer well itself). Read the code, and look up docs or the web when the answer depends on something outside the code or newer than a model's knowledge cutoff. May suggest code, must not edit files.
 - **Task:** implement the change. Trust `intent` for what the user wants, and use the snapshot to find where and how.
 - Never run `/annotate-session-start`, register, poll, or call `reply_agent_request`. A sub-chat has the same Annotate MCP tools, so say this in its brief. Return the result to this chat: for an ask, an answer short enough to be spoken; for a task, one short sentence Live can speak, or why it failed.
