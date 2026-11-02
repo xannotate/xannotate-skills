@@ -33,7 +33,7 @@ Do not read an unfinished recording. Live snapshots are frozen for you; use `get
 
 ## Each poll item
 
-Items are `kind: "ask"` (a read-only question) or `kind: "task"` (a change to make). Each has `requestId`, `text`, `needsRecording`, and for tasks `intent` (what the user wants and why). When `needsRecording` is false, Annotate took no snapshot and the item has no `recordingSessionId`.
+Items are `kind: "ask"` (a read-only question) or `kind: "task"` (a change to make). Each has `requestId`, `text`, `needsRecording`, and for tasks `intent` (what the user wants and why). When `needsRecording` is false, Annotate took no snapshot and the item has no `recordingSessionId`. When the user attached files, folders, or clipboard snippets to the recording, the item also has `contextFiles`: each has `fileName`, `kind` (`file`, `folder`, or `snippet`) and a `path` to read, whatever `needsRecording` says.
 
 Do not wait for one item to finish before taking the next. The user is talking to Live while this runs, so any delay is heard. For every item, all at once:
 
@@ -59,9 +59,10 @@ Never pick a sub-agent because it is faster or simpler. A tool that is missing o
 
 Keep related work together. Keep a short map in this chat of topic → sub-chat (or sub-agent), its model, and the requests it handled. When a new request is about the same feature, screen, or files as an existing sub-chat's work, send it to that sub-chat, so the context is reused. Start a new sub-chat only for a new topic, and for a task whose topic so far ran only on a fast ask model: a task never goes to a fast-model worker.
 
-Brief each worker with the `requestId`, `kind`, `text`, `intent`, and these rules:
+Brief each worker with the `requestId`, `kind`, `text`, `intent`, the `contextFiles` paths if any, and these rules:
 
 - If `needsRecording` is true or missing, call `get_agent_request` first, then `get_agent_request_frame` for the frames it needs. The snapshot covers only the stretch where the user's words (`anchors.spokenQuotes`) and the on-screen text (`anchors.screenTexts`) matched the recording, from a few seconds before the first hit to a few seconds after the last. Start with the frames that have `matchedScreenTexts` and the frames around the matched speech in `anchors.hits`; the fresh frame is the screen right now. If `anchors.source` is `fallback`, nothing matched and the window is the last minute before the request. If `needsRecording` is false, work from `text` and `intent` only: there is no snapshot, so do not call `get_agent_request` or `get_agent_request_frame`, and do not pass any recording to the sub-chat.
+- If the item has `contextFiles`, read the ones the request is about from their `path`: images, PDFs, code, docs, and snippets are what the user attached for this work. When `text` names an attachment ("the PDF I added"), that file is the source of truth for it. Skim the others only if they may help. A folder's path is the user's own folder: read it, never edit it unless the task asks.
 - **Ask:** research in depth (Live sends the questions it cannot answer well itself). Read the code, and look up docs or the web when the answer depends on something outside the code or newer than a model's knowledge cutoff. May suggest code, must not edit files.
 - **Task:** implement the change. Trust `intent` for what the user wants, and use the snapshot to find where and how.
 - Never run `/annotate-session-start`, register, poll, or call `reply_agent_request`. A sub-chat has the same Annotate MCP tools, so say this in its brief. Return the result to this chat: for an ask, an answer short enough to be spoken; for a task, one short sentence Live can speak, or why it failed.
