@@ -121,7 +121,8 @@ Poll results (SKILL.md step 9):
 
 - `ready`: a poll after a finished task resets the 30-minute idle clock and drains anything queued while you were busy.
 - `timeout` is normal and will happen many times in a row. It is never a reason to stop, to summarize, or to ask the user anything. Do not write a “still registered” message.
-- `gone` or “Start Annotate…”: this session ended or the app quit. Do not say the listener is still registered.
+- `gone`, or “Start Annotate…” on two polls in a row: this session ended or the app quit. Do not say the listener is still registered. A single “Start Annotate…” can come from an older Annotate MCP that reports any dropped request that way, so poll once more before you stop.
+- “Lost the connection to Annotate…”: a request dropped while the app is still running. Poll again; it is never a reason to stop.
 - Do not replace the poll with `sleep`, and do not sleep and then stop.
 
 Ending the turn stops the loop and starts the 30-minute idle clock. If you miss that window, the listener disappears from Annotate.

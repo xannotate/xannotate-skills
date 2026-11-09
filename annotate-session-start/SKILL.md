@@ -42,7 +42,7 @@ wait for the next recording → do it → set_agent_session_title → tell the u
 
 These rules override any habit of finishing with a summary. Breaking one of them leaves the user's recordings stuck in the queue.
 
-1. **The loop has only these exits:** `session.disconnected`; `session.gone` that a new `register_agent_session` cannot recover; on the local MCP, `status: "gone"` or “Start Annotate to use session handoff.”; the user telling you to stop; or the user force-stopping this chat (see rule 6). Nothing else ends the loop.
+1. **The loop has only these exits:** `session.disconnected`; `session.gone` that a new `register_agent_session` cannot recover; on the local MCP, `status: "gone"`, or “Start Annotate to use session handoff.” twice in a row (see step 9); the user telling you to stop; or the user force-stopping this chat (see rule 6). Nothing else ends the loop.
 2. **These are never exits:** the task is done; the queue is empty; a wait timed out, even many times in a row; the user has not replied; the conversation is long; you think the work is complete; a command approval was declined, dismissed, or blocked. Declining an approval is not the user telling you to stop. Follow rule 7, then wait again.
 3. **A reply with no tool call ends your turn.** Ending your turn while nothing is watching for the next recording is the same as stopping. Polling happens in this chat, never in a subagent and never as a background task. So, while listening:
    - **Local MCP:** the last action of every turn is a `poll_agent_session` call. Never send a text-only reply. After a task, send the feedback message (rule 8), write “Done. Listening…” and call `poll_agent_session` in the same turn.
@@ -146,7 +146,7 @@ Never say the listener is still registered in Annotate, or to click this chat’
 
    **Remote MCP:** follow [Listening (cloud)](#listening-cloud): check, do every recording including queued ones, send the brief empty-queue line, subscribe, poll the log. Do not stop.
 
-   **Local MCP:** nothing can wake a local chat. `poll_agent_session` is the only way recordings reach it, so you must keep calling it, back to back, for as long as the listener is registered. It heartbeats and waits up to 20 seconds, checking every **2 seconds** inside Annotate. Annotate keeps this listener listed while you are in-flight on a task, so the user can hand off another recording without waiting. Run exactly this loop:
+   **Local MCP:** nothing can wake a local chat. `poll_agent_session` is the only way recordings reach it, so you must keep calling it, back to back, for as long as the listener is registered. It heartbeats and waits up to 9 minutes by default (pass `timeoutMs` up to 30 minutes for longer), checking every **2 seconds** inside Annotate, and returns as soon as a recording arrives. Annotate keeps this listener listed while you are in-flight on a task, so the user can hand off another recording without waiting. Run exactly this loop:
 
    ```
    loop:
@@ -157,7 +157,10 @@ Never say the listener is still registered in Annotate, or to click this chat’
                tell the user: "Done. Listening for new session recordings. If this session ends, run /annotate-session-start again here."
                go to loop          ← in the same turn, right after that message
      timeout → go to loop          ← no message, no summary, no pause
-     gone / "Start Annotate…" → tell the user the task is done (if it is) and to run /annotate-session-start again here; exit
+     error "Lost the connection to Annotate…" → go to loop   ← a dropped request, not a stop
+     error "Start Annotate…" → call poll_agent_session once more right away;
+               only if it says "Start Annotate…" again is the app really quit
+     gone / "Start Annotate…" twice → tell the user the task is done (if it is) and to run /annotate-session-start again here; exit
    ```
 
    `timeout` is normal, many times in a row, and never a reason to stop, summarize, or ask anything. Do not replace the poll with `sleep`. On the local MCP, the only correct last action of a turn is a `poll_agent_session` call, until an exit in rule 1 happens. Result details, the 30-minute idle clock, and the fallback when `poll_agent_session` is missing are in [Watch loop](reference.md#watch-loop).
