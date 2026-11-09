@@ -12,14 +12,20 @@ description: >-
   every delivered recording, including queued ones. A finished task, an empty
   queue, or a timeout is never a reason to stop. If the user clicks Stop, the
   loop ends for good: kill any subscribe and disconnect. Use when the user
-  runs /annotate-session-start or pastes a Session hand off prompt. Do not
-  poll for a recording that was only opened as a prompt (Copy / “Use this
-  Annotate recording as the prompt”).
+  runs /annotate-session-start or pastes a Session hand off prompt (any prompt
+  with a “Run skill /annotate-session-start” line, even one that opens with
+  “Use this local recording as the prompt.”). Do not poll for a Copy prompt,
+  which has a Session id but no “Run skill /annotate-session-start” line.
 ---
 
 # Annotate session start
 
-Rapid handoff for Annotate recordings. **Only** register and poll when this chat was started with `/annotate-session-start` (or a Session hand off prompt that says to run that skill). If the user only pasted a recording as the prompt (`Use this Annotate recording as the prompt` / Copy), run that recording and **do not** `register_agent_session` or `poll_agent_session`.
+Rapid handoff for Annotate recordings. **Only** register and poll when this chat was started with `/annotate-session-start` or a Session hand off prompt that says to run that skill.
+
+**Tell the two prompts apart by the `Run skill /annotate-session-start` line, not by the first line.** Both open with `Use this local recording as the prompt.` (or `cloud`).
+
+- **Session hand off prompt:** has a `Run skill /annotate-session-start` line. Register, run the recording, and keep polling.
+- **Copy prompt:** has a `Session id:` but no `Run skill /annotate-session-start` line. Run that recording and **do not** `register_agent_session` or `poll_agent_session`.
 
 When this chat did start with the skill: register as a live listener, **run any recording id in the prompt immediately**, then **keep polling**. The user can later click this chat’s title in Annotate to queue another recording — no paste.
 
@@ -167,7 +173,8 @@ Never say the listener is still registered in Annotate, or to click this chat’
 
 ## Do not
 
-- Poll, register, or keep a watch loop if this recording prompt was not started with `/annotate-session-start` (Copy prompt / “Use this Annotate recording as the prompt” only).
+- Poll, register, or keep a watch loop for a Copy prompt (a Session id with no `Run skill /annotate-session-start` line).
+- Skip registering and polling for a prompt that has a `Run skill /annotate-session-start` line because it opens with `Use this local recording as the prompt.` That opening line is on both prompts.
 - Browse private Annotate library paths. Use MCP tools only.
 - End the turn while this listener is registered and the next poll or check is not running (see rule 3 of the [listening loop](#listening-loop-mandatory--read-before-anything-else)). On the local MCP, that means never end the turn without a `poll_agent_session` call as the last action. On the remote MCP, the last action is `check_agent_session`, or the one-shot subscribe and the log poll.
 - Stop listening for new recordings unless one of the exits in rule 1 happens.

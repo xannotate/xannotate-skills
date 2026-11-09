@@ -69,7 +69,7 @@ When `poll_agent_session` is missing, or the server is HTTP `/mcp`, this chat is
 
 `/annotate-session-start` with no recording id: register, title, poll. Do not steal another chat’s recordings.
 
-**Do not poll** if this chat only received a Copy prompt (`Use this Annotate recording as the prompt`). Read that recording, then stop. No `register_agent_session`, no `poll_agent_session`.
+**Do not poll** if this chat only received a Copy prompt: a Session id with no `Run skill /annotate-session-start` line. Read that recording, then stop. A prompt that has that line is a Session hand off prompt and must poll, even though it opens with the same `Use this local recording as the prompt.` line as a Copy prompt. No `register_agent_session`, no `poll_agent_session`.
 
 ## Same chat vs parallel
 
