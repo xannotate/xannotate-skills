@@ -74,6 +74,7 @@ Brief each worker with the `requestId`, `kind`, `text`, `intent`, the `contextFi
 The user is waiting on a voice call, so a finished result must reach Live within seconds. Relaying it comes before anything else, including the next poll.
 
 - **Reply the moment a result is ready.** As soon as a worker's result comes back, call `reply_agent_request` for its `requestId`: `done` with the result text, or `failed` with the reason. Do not batch results, do not wait for other workers, and do not rewrite or summarize the result first. Only trim it so it can be spoken.
+- **Canceled is not failed.** When a request is stopped on purpose (the user canceled it, a newer request replaced it, or you stopped its worker), reply `failed` with text that starts with `Canceled:` and says why, like `Canceled: replaced by the newer footer task.` Annotate drops it quietly and does not tell the user it failed. Use plain `failed` only for real failures.
 - **Short polls while work is out.** A long `poll_agent_session` blocks this chat, so it cannot see a finished sub-chat until the poll returns. While any request is still with a worker, call `poll_agent_session` with `timeoutMs: 5000`. After each poll, check every outstanding worker for a finished result and reply for each one that is done, then poll again.
   - Claude sub-chats: check the sessions you started, for example with `list_sessions` (`linked: true`) or `get_session`, and read each finished session's last report.
   - Codex chats: read the thread's latest reply.
