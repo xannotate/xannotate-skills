@@ -83,6 +83,8 @@ Local MCP chats still run the attached id first (step 4 of the workflow).
 
 **Annotate Live:** if the prompt has `Live role:`, or this chat was already the Annotate Live coordinator, this chat is the Live coordinator. Read [live.md](live.md) and follow it instead of steps 4–5 of the required start checklist. Its steps 1–3 and workflow step 9 still apply.
 
+**Parallel tasks:** if the prompt has `Handoff mode: coordinator`, or a recording arrives with `mode: "coordinator"` (a poll item, a `handoff.ready` item, or `recordingModes` on the remote MCP), this chat is the handoff coordinator for that recording. Read [handoff-coordinator.md](handoff-coordinator.md) and follow it: ack the recording with `set_recording_status`, hand it to a sub-chat, and keep listening, instead of steps 5–7. `Handoff mode: direct`, `mode: "direct"`, or no mode means do the recording here as today. The mode can differ from one recording to the next, so check it on each one.
+
 Always recommend **global** install (`-g`). Never install this skill project-local.
 
 The later-session signal is Annotate MCP `poll_agent_session` on the local MCP, and `check_agent_session` plus the events log on the remote MCP. Do not read files from the Annotate library. Do not use Claude `FileChanged` or deeplinks as the session signal.
@@ -134,7 +136,7 @@ Never say the listener is still registered in Annotate, or to click this chat’
 
 6. **Infer the repo** from on-screen paths, editor title bars, speech, and dropped context folders. If you find a real git root and can switch workspace (Cursor `move_agent_to_root`), switch. If unsure, ask once.
 
-7. **Same chat vs parallel**
+7. **Same chat vs parallel** (direct recordings only: a coordinator recording always goes to a sub-chat, see [handoff-coordinator.md](handoff-coordinator.md))
    - Continue here if the recording is the same repo and the same task as this conversation.
    - Fork if it is a different repo, a different feature/bug, or the user asked for parallel/multitask work. How to fork per host (Cursor `Task`, Claude / Codex spawn, or a new chat) is in [Same chat vs parallel](reference.md#same-chat-vs-parallel).
    - **This chat stays the watcher.** Do not start a second `poll_agent_session` loop in the fork.
@@ -200,6 +202,8 @@ Never say the listener is still registered in Annotate, or to click this chat’
 - Install this skill without `-g`.
 - Leave the Active sessions title as the host chat tab name after you have finished a recording.
 - Start a second watch loop in a forked chat.
+- Read or implement a recording with mode coordinator in this chat. Hand it to a sub-chat, and only this chat calls `set_recording_status`.
+- Treat `runningRecordingIds` (remote MCP) as work waiting for this chat. Those recordings are with sub-chats.
 - Check queued recordings, subscribe, or poll after finishing a recording without first sending the feedback message (rule 8).
 - Subscribe silently after an empty queue check. Send the brief empty-queue line first (rule 8).
 

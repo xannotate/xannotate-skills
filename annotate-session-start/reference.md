@@ -33,8 +33,9 @@ Listener tools require the Annotate app (localhost API):
 | `check_agent_session` | Remote MCP only. Read this listener's in-flight and queued recording ids without taking them off the queue, and heartbeat the lease. This is the queue read on the remote MCP. When both lists are empty, subscribe to `waitUrl`. |
 | `set_agent_session_title` | `{ sessionId, sessionTitle }` — short phrase of the latest implemented change; replace after every finished recording |
 | `set_agent_session_status` | `{ sessionId, status: "idle" \| "working" }` |
-| `poll_agent_session` | **Watch loop.** Heartbeat + block up to `timeoutMs` (default 540000, max 1800000), checking every 2s. Returns `ready` + `recordingSessionIds`, `timeout`, or `gone`. |
-| `list_agent_sessions` | Live `{ sessionId, sessionTitle, status, queuedCount }[]` |
+| `poll_agent_session` | **Watch loop.** Heartbeat + block up to `timeoutMs` (default 540000, max 1800000), checking every 2s. Returns `ready` + `recordingSessionIds`, `timeout`, or `gone`. Each recording item has `mode`: `coordinator` (Parallel tasks on, see [handoff-coordinator.md](handoff-coordinator.md)) or `direct`. |
+| `set_recording_status` | `{ sessionId, recordingSessionId, status: "in_progress" \| "done" \| "failed" }` — coordinator recordings only. `in_progress` acks it (an unacked one is handed over again after about a minute); `done` / `failed` when its sub-chat finishes. Annotate's chip counts the recordings in progress. |
+| `list_agent_sessions` | Live `{ sessionId, sessionTitle, status, queuedCount, runningCount }[]` |
 | `unregister_agent_session` | Stop appearing in Annotate |
 
 If Annotate is quit, **local** listener tools return `Start Annotate to use session handoff.`
