@@ -28,9 +28,9 @@ The title is set twice, and once more only if it gets clearer:
 2. **As soon as the worker understands the intent.** The worker has read the recording (or the snapshot and the user's words) and knows what the user wants, before it changes anything: it renames its own chat to a title of that intent. This is the name that matters, since triage only guessed. See [Every brief says](#every-brief-says) for how.
 3. **When it finishes**, only if its final title phrase reads clearly better than the current name (the work turned out to be something else, or narrower). Do not rename for a small rewording.
 
-A sub-agent's name usually cannot change after it starts. Give it the best name you can at step 1, and use the worker's intent title in the topic map and in the feedback instead.
+A sub-agent's name usually cannot change after it starts. Give it the best name you can at step 1, and use the worker's intent title in the worker map and in the feedback instead.
 
-Whenever a worker's title changes, update the topic map in this chat to the new name, so the next related piece of work finds it.
+Whenever a worker's title changes, update the [worker map](#the-worker-map) to the new name, so the next related piece of work finds it.
 
 ## Models
 
@@ -41,7 +41,57 @@ These hold on a sub-chat and a sub-agent alike, and override any host guidance t
 
 ## Keep related work together
 
-Keep a short map in this chat of topic → sub-chat (or sub-agent), its repo, its model, and the work it handled. When new work is about the same feature, screen, or files as an existing sub-chat's work, send it to that sub-chat (in Claude, a message to that session), so the context is reused. Start a new sub-chat only for a new topic or a different repo, and never send code-changing work to a worker that runs on a fast model.
+New work that continues earlier work goes to the worker that did it, so its context is reused and two workers never edit the same files at once. Everything else gets a new worker. This section says how to tell which.
+
+### The worker map
+
+Keep a map in this chat, one row per worker:
+
+- its name, and the host's id for it (the session id, the thread, or the sub-agent's id)
+- its repo, and the files, screens and components its work touched
+- what it handled: one line per request or recording id
+- its model, and its state: working, finished, or waiting on the user
+- whether it can take more work (a finished sub-agent often cannot)
+
+Update the row whenever a worker starts, reports, is renamed, or finishes.
+
+**Rebuild the map whenever it may be gone:** at the start of a run, after a resume, and whenever you cannot find it in this conversation (earlier context may have been summarized). Rebuild it from the host, never from memory: in Claude, `list_sessions` with `linked: true`, then `get_session` on each for its title, folder and last report; in Codex, the threads started from this chat; for sub-agents, the ones the host can still reach. Only workers this chat started go on the map. A chat the user started is added only when the user says to use it ("add this to the footer chat").
+
+### Where new work goes
+
+Compare what you learned at triage (the repo, the files and paths on screen, the screen or feature, the user's words) with the map, and take the first rule that fits:
+
+1. **The user named a worker** ("add this to the footer chat", "same chat as before"): send it there.
+2. **A different repo never reuses.** Same repo is required for every rule below.
+3. **Same files, screen or component**, or the user says it continues or corrects earlier work ("still broken", "also make it…", "undo that"): send it to that worker, the most recent one if several match.
+4. **Same feature, different files:** send it to that worker if it is finished; if it is still working, start a new one, which can run alongside since the files do not overlap.
+5. **Unsure:** start a new worker. Mixing two tasks in one chat costs the user more than a new chat costs context.
+
+Never send code-changing work to a worker that runs on a fast model.
+
+### When the matching worker is busy
+
+- **Same files:** send it to that worker anyway, as a follow-up after its current work (in Claude, a message to that session waits for its turn). Never start a second worker on the same files while the first is working: their edits would conflict.
+- **Waiting on the user:** send it there too, and say in this chat that it waits until the user answers that worker.
+
+### Sub-agents
+
+A sub-agent takes a follow-up only if the host can continue it (for example `SendMessage` with its id in Claude Code). If it cannot, start a new sub-agent and put a short summary of the earlier work in its brief: what it changed, in which files, and its result.
+
+### The follow-up brief
+
+A reused worker already has the context, so its brief is shorter than a first one:
+
+- "This continues your work on <its name>." and why: the same files, the user's words, or the user named this chat.
+- The new ids and paths, and how to read them, as in a first brief.
+- "Report this one on its own, with its own result and title phrase."
+- The rules every brief carries ([Every brief says](#every-brief-says)). The worker renames itself only if the new work changes what it is about.
+
+A worker that handles several ids still reports each one separately, and each gets its own status in Annotate.
+
+### Say where it went
+
+When you hand work over, tell the user in one line which worker got it and why, before you listen again: "Sent to Fix footer spacing (same footer files)." or "Started Add pen color picker." The user can then open the right chat or tell you to move it.
 
 ## Every brief says
 
@@ -55,9 +105,9 @@ Keep a short map in this chat of topic → sub-chat (or sub-agent), its repo, it
 A long poll or subscribe blocks this chat, so it cannot see a finished worker until that wait returns. While any worker is out, keep waits short (the coordinator file gives the number). After each wait, check every outstanding worker:
 
 - Claude sub-chats: check the sessions you started, for example with `list_sessions` (`linked: true`) or `get_session`, and read each finished session's last report.
-
-While you check, look at each worker's title too. If a worker reported a `Title:` line because it could not rename itself, rename it now with the host's tool for renaming a session you started (in Claude, the session title tool with that session's id), and update the topic map. If its name is still the start name and the worker has said what it is doing, rename it to that.
 - Codex chats: read the thread's latest reply.
 - Sub-agents: their completion notice.
+
+While you check, look at each worker's title too. If a worker reported a `Title:` line because it could not rename itself, rename it now with the host's tool for renaming a session you started (in Claude, the session title tool with that session's id), and update the worker map. If its name is still the start name and the worker has said what it is doing, rename it to that.
 
 Keep a short list in this chat of outstanding work → worker, so nothing is forgotten. An item leaves the list only once you have reported it to Annotate as the coordinator file says.

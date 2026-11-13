@@ -43,7 +43,7 @@ Do not wait for one item to finish before taking the next. The user is talking t
 
 ## Workers
 
-Hand every request to a worker exactly as [workers.md](workers.md) says: a sub-chat first, a sub-agent only as fallback, on this chat's model or better for tasks, and reuse the sub-chat that already worked on the same topic. On top of that, for Live:
+Hand every request to a worker exactly as [workers.md](workers.md) says: a sub-chat first, a sub-agent only as fallback, on this chat's model or better for tasks, and reuse a worker on the map by the rules in [Where new work goes](workers.md#where-new-work-goes). On top of that, for Live:
 
 - **Asks run on the fastest model available** (a fast or flash model, not a thinking model), so the answer is spoken quickly. A task never goes to a worker that so far ran only fast-model asks.
 

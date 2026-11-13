@@ -19,15 +19,15 @@ For every recording with mode coordinator, all at once, without waiting for one 
 
 1. **Ack it:** `set_recording_status` with `status: "in_progress"`. On the local MCP an unacked recording is handed over again after about a minute; on the remote MCP it keeps coming back in `inFlightRecordingIds` and the subscribe replay. Once acked it shows as in progress on this chat's chip in Annotate.
 2. **Triage only:** `get_manifest_summary` for the recording, to learn the repo (on-screen paths, editor titles, dropped folders, speech) and the topic. Do not read frames, the timeline, or code here, and do not plan the change. Never read a recording that is not completed.
-3. **Pick the worker** as [workers.md](workers.md) says: the sub-chat that already worked on the same repo and feature, or a new sub-chat started in that repo and named after the task ([workers.md](workers.md#name-the-sub-chat-after-its-task)), never `Annotate recording <time> handoff`. Code-changing work never goes to a smaller model.
-4. **Brief it** with:
+3. **Pick the worker** by the rules in [Where new work goes](workers.md#where-new-work-goes): the worker the user named; else the worker on the map that did the same files, screen or component in the same repo (even if it is still working: the recording waits as its follow-up); else a new sub-chat started in that repo and named after the task ([workers.md](workers.md#name-the-sub-chat-after-its-task)), never `Annotate recording <time> handoff`. When unsure, start a new one. Code-changing work never goes to a smaller model.
+4. **Brief it** with the items below. A reused worker gets them as a [follow-up brief](workers.md#the-follow-up-brief), which opens with "This continues your work on <its name>." and why.
    - The recording id and which MCP to use: "Use the local Annotate MCP (annotate-session)" or "Use the Annotate remote MCP (annotate-session-remote)", the same as the prompt that reached this chat.
    - "Do the work in this recording: read it MCP-first (`get_timeline` first, then `search_session`, `get_frames_near`, `get_transcript_range`, `list_context` as needed, and `get_session_guide`), work in the repo it is about, and make the change it asks for."
    - The rules every brief carries ([workers.md](workers.md#every-brief-says)), including: "As soon as you have read the recording and know what it asks for, rename this chat to a short title of that intent."
    - "End with: what you did, what the recording asked for, how your work answers it, anything left for the user, and a short title phrase of the change (spaces, no dashes)."
-5. **Listen again** right away. Do not answer or implement anything in this chat.
+5. **Say where it went** in one line ("Sent to Fix footer spacing (same footer files).", "Started Add pen color picker."), update the [worker map](workers.md#the-worker-map), and **listen again** right away. Do not answer or implement anything in this chat.
 
-Keep a short list in this chat: recording id → worker, and the topic map from workers.md. On the remote MCP the done file still lists finished ids; an id goes in it when its worker finishes, not when it is handed over.
+Keep a short list in this chat: recording id → worker, next to the worker map from workers.md. On the remote MCP the done file still lists finished ids; an id goes in it when its worker finishes, not when it is handed over.
 
 ## While workers run
 
@@ -48,4 +48,4 @@ If a worker is waiting on the user (a question, an approval), say so in the feed
 
 ## Resume after a stop
 
-If this chat stopped and the user runs `/annotate-session-start` again here, register again as SKILL.md says (remote: with `resumeSessionId`). Then read your list. For a recording you had handed over, check its worker before handing it over again: a finished one is relayed as above, a running one stays with it, and only a recording with no worker goes to a new one. On the remote MCP, `runningRecordingIds` lists the recordings Annotate still counts as in progress.
+If this chat stopped and the user runs `/annotate-session-start` again here, register again as SKILL.md says (remote: with `resumeSessionId`). Then rebuild the [worker map](workers.md#the-worker-map) from the host (in Claude, `list_sessions` with `linked: true`), since this chat may no longer have it. For a recording you had handed over, check its worker before handing it over again: a finished one is relayed as above, a running one stays with it, and only a recording with no worker goes to a new one. On the remote MCP, `runningRecordingIds` lists the recordings Annotate still counts as in progress.
