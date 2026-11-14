@@ -16,6 +16,8 @@ description: >-
   with a “Run skill /annotate-session-start” line, even one that opens with
   “Use this local recording as the prompt.”). Do not poll for a Copy prompt,
   which has a Session id but no “Run skill /annotate-session-start” line.
+metadata:
+  version: "1"
 ---
 
 # Annotate session start

@@ -29,6 +29,14 @@ Then run `/annotate-session-start` (or paste the Session hand off prompt from th
 
 Requires [Annotate MCP](https://xannotate.com/mcp/install.md) (`annotate-session`) and the Annotate desktop app for live handoff.
 
+## Versioning
+
+`annotate-session-start/SKILL.md` carries `metadata.version` (a whole number). The Annotate app requires a minimum (`ANNOTATE_SESSION_START_SKILL_VERSION`) and warns beside the agent picker when an installed copy is older, or has no version. When an app release needs new skill behavior:
+
+1. Bump `metadata.version` here and in annotate-ui's `public/skills/annotate-session-start/SKILL.md`.
+2. Merge to `main` (skills.sh installs from `main`).
+3. Then raise `ANNOTATE_SESSION_START_SKILL_VERSION` in the app to match.
+
 ## Publish
 
 1. Push to `https://github.com/xannotate/xannotate-skills.git`.
